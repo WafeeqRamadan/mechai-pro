@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-MechAI Pro v12 — ChatGPT Exact Minimal UI
-Near-ChatGPT black minimal interface for MechAI Pro.
+MechAI Pro v13 — ChatGPT Exact Minimal UI + Input Fix
+ChatGPT-like minimal interface with corrected full-width input bar.
 Run: streamlit run app.py
 """
 import os, json, re, math, html
@@ -79,9 +79,40 @@ html,body,[class*="css"]{font-family:Inter,system-ui,-apple-system,Segoe UI,sans
 .agent-tag{display:inline-flex;color:#888;font-size:12px;margin-bottom:8px;}
 .about-card{background:transparent;border:0;padding:24px;line-height:1.75;max-width:760px;margin:90px auto 0;color:#e8e8e8;}.about-card h2{font-size:26px;margin-top:0;font-weight:500;}
 .footer-line{display:none;}
-[data-testid="stChatInput"]{background:linear-gradient(180deg,rgba(0,0,0,0),#000 24%);padding-bottom:24px;}
-[data-testid="stChatInput"] > div{max-width:840px;margin:0 auto;}
-[data-testid="stChatInput"] textarea{border-radius:28px!important;border:1px solid #3a3a3a!important;background:#212121!important;color:#fff!important;min-height:56px!important;box-shadow:none!important;padding-left:18px!important;}
+/* ChatGPT-style fixed composer: full, clean, no tiny input card */
+[data-testid="stChatInput"]{
+  position:fixed!important;
+  left:270px!important;
+  right:0!important;
+  bottom:0!important;
+  width:calc(100vw - 270px)!important;
+  background:linear-gradient(180deg,rgba(0,0,0,0),#000 22%,#000 100%)!important;
+  padding:22px 24px 28px!important;
+  z-index:999!important;
+}
+[data-testid="stChatInput"] > div{
+  width:min(760px, calc(100vw - 340px))!important;
+  max-width:760px!important;
+  min-width:520px!important;
+  margin:0 auto!important;
+}
+[data-testid="stChatInput"] form,
+[data-testid="stChatInput"] div[data-testid="stChatInputContainer"],
+[data-testid="stChatInput"] div[data-testid="stChatInputTextArea"]{
+  width:100%!important;
+  max-width:760px!important;
+}
+[data-testid="stChatInput"] textarea{
+  width:100%!important;
+  border-radius:28px!important;
+  border:1px solid #3a3a3a!important;
+  background:#212121!important;
+  color:#fff!important;
+  min-height:56px!important;
+  box-shadow:none!important;
+  padding-left:18px!important;
+  font-size:15px!important;
+}
 [data-testid="stChatInput"] button{background:#f4f4f4!important;color:#000!important;border-radius:999px!important;}
 .notice-slim{position:fixed;right:18px;bottom:10px;color:#6f6f6f;font-size:11px;z-index:999;}
 .stMarkdown a{color:#d1d5db;}button[kind="secondary"]{border-radius:10px!important;}
@@ -91,6 +122,11 @@ html,body,[class*="css"]{font-family:Inter,system-ui,-apple-system,Segoe UI,sans
   .landing{min-height:68vh;}.landing h1{font-size:22px;margin-bottom:28px;}
   .message-row{gap:10px;margin:20px 0;}.bubble{font-size:14px;max-width:100%;}
   .notice-slim{display:none;}.user-chip{display:none;}
+  [data-testid="stChatInput"]{left:0!important;width:100vw!important;padding:16px 14px 22px!important;}
+  [data-testid="stChatInput"] > div{width:100%!important;min-width:0!important;max-width:100%!important;}
+}
+@media(min-width:901px) and (max-width:1180px){
+  [data-testid="stChatInput"] > div{width:min(720px, calc(100vw - 320px))!important;min-width:420px!important;}
 }
 </style>
 """, unsafe_allow_html=True)
