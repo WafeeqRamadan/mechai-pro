@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-MechAI Pro v10 — Executive Command UI
-Premium command-center mechanical engineering AI copilot with OpenAI as primary provider and Gemini as optional backup.
+MechAI Pro v11 — ChatGPT-style Quiet UI
+Minimal black ChatGPT-like interface for MechAI Pro.
 Run: streamlit run app.py
 """
-import os, json, re, math
+import os, json, re, math, html
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List
@@ -40,101 +40,112 @@ st.set_page_config(
 )
 
 # -----------------------------------------------------------------------------
-# CSS — premium, calm, chat-first, mobile responsive
+# CSS — ChatGPT-style quiet black UI
 # -----------------------------------------------------------------------------
 st.markdown(r"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 :root{
-  --bg:#050711; --ink:#F8FAFC; --muted:#A8B3CF; --faint:#6F7B99;
-  --panel:rgba(9,14,28,.72); --panel2:rgba(13,20,38,.82); --glass:rgba(15,23,42,.58);
-  --line:rgba(148,163,184,.18); --cyan:#67E8F9; --blue:#60A5FA; --violet:#A78BFA;
-  --green:#22C55E; --amber:#FBBF24; --red:#FB4D63;
+  --bg:#000000;
+  --sidebar:#050505;
+  --sidebar2:#090909;
+  --surface:#111111;
+  --surface2:#1f1f1f;
+  --input:#2b2b2b;
+  --input-border:#3a3a3a;
+  --text:#f5f5f5;
+  --muted:#b4b4b4;
+  --faint:#777777;
+  --line:#242424;
+  --hover:#2f2f2f;
+  --green:#22c55e;
+  --amber:#fbbf24;
+  --red:#ff4a4a;
 }
 html, body, [class*="css"]{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;}
-.stApp{
-  color:var(--ink);
-  background:
-    radial-gradient(circle at 18% 3%, rgba(103,232,249,.20), transparent 28%),
-    radial-gradient(circle at 84% 8%, rgba(167,139,250,.18), transparent 30%),
-    radial-gradient(circle at 50% 100%, rgba(96,165,250,.10), transparent 30%),
-    linear-gradient(180deg,#060914 0%,#030510 100%);
-}
-.stApp:before{
-  content:""; position:fixed; inset:0; pointer-events:none; opacity:.22; z-index:0;
-  background-image:linear-gradient(rgba(148,163,184,.10) 1px, transparent 1px),linear-gradient(90deg,rgba(148,163,184,.10) 1px, transparent 1px);
-  background-size:56px 56px; mask-image:radial-gradient(circle at 50% 35%, black, transparent 72%);
-}
-#MainMenu, footer, header{visibility:hidden;}
-.block-container{max-width:1220px; padding:1.05rem 1.7rem 7.3rem 1.7rem; position:relative; z-index:1;}
+.stApp{background:var(--bg); color:var(--text);}
+#MainMenu, footer, header{visibility:hidden; height:0;}
+.block-container{max-width:980px; padding:2.2rem 2rem 7.5rem;}
 [data-testid="stSidebar"]{
-  background:linear-gradient(180deg,rgba(8,12,25,.94),rgba(3,6,14,.98));
-  border-right:1px solid rgba(103,232,249,.14); box-shadow:18px 0 70px rgba(0,0,0,.40);
+  background:var(--sidebar);
+  border-right:1px solid var(--line);
 }
-[data-testid="stSidebar"] *{color:var(--ink);} 
-[data-testid="stSidebar"] section{padding-top:0!important;}
+[data-testid="stSidebar"] *{color:var(--text);} 
+[data-testid="stSidebar"] section{padding-top:.6rem!important;}
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p{color:var(--muted);}
+.sidebar-brand{padding:12px 10px 16px; margin-bottom:10px;}
+.sidebar-brand h2{margin:0; font-size:20px; font-weight:700; letter-spacing:-.04em;}
+.sidebar-brand p{font-size:12px; line-height:1.55; color:var(--muted); margin:9px 0 0;}
 [data-testid="stSidebar"] .stButton button{
-  border-radius:16px; border:1px solid rgba(103,232,249,.25); background:linear-gradient(135deg,rgba(15,23,42,.88),rgba(7,12,26,.88)); color:#fff;
-  height:46px; font-weight:800; box-shadow:0 10px 28px rgba(0,0,0,.18);
+  width:100%; height:42px; border-radius:12px; border:1px solid var(--line); background:var(--surface2); color:var(--text); font-weight:600;
 }
-[data-testid="stSidebar"] .stButton button:hover{border-color:rgba(103,232,249,.60); transform:translateY(-1px);}
+[data-testid="stSidebar"] .stButton button:hover{background:var(--hover); border-color:#3d3d3d;}
+[data-testid="stSidebar"] .stRadio > label,
+[data-testid="stSidebar"] .stSelectbox > label,
+[data-testid="stSidebar"] .stTextInput > label{color:var(--muted)!important; font-size:12px!important; font-weight:650!important;}
 [data-testid="stSelectbox"] div[data-baseweb="select"] > div,
 [data-testid="stTextInput"] input{
-  background:rgba(5,9,20,.88) !important; border:1px solid rgba(148,163,184,.18) !important; border-radius:14px !important;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+  background:#111!important; border:1px solid var(--line)!important; border-radius:12px!important; color:var(--text)!important; min-height:42px;
 }
 [data-testid="stExpander"]{
-  background:rgba(6,10,22,.54); border:1px solid rgba(148,163,184,.15) !important; border-radius:18px !important; overflow:hidden;
+  background:transparent!important; border:1px solid var(--line)!important; border-radius:12px!important; overflow:hidden;
 }
-.sidebar-card{
-  position:relative; overflow:hidden; border:1px solid rgba(103,232,249,.18);
-  background:linear-gradient(145deg,rgba(20,31,57,.72),rgba(6,10,22,.78)); border-radius:26px;
-  padding:22px 20px; margin:10px 0 24px; box-shadow:0 22px 80px rgba(0,0,0,.34);
+.status-ok{color:var(--green); font-weight:700; font-size:13px; margin:10px 0;}
+.status-warn{color:var(--amber); font-weight:700; font-size:13px; margin:10px 0;}
+.chat-topbar{position:fixed; top:0; left:0; right:0; height:0; pointer-events:none;}
+.landing{
+  min-height:58vh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
 }
-.sidebar-card:before{content:""; position:absolute; inset:-40%; background:radial-gradient(circle at 20% 0%,rgba(103,232,249,.18),transparent 30%);}
-.sidebar-card h2{position:relative;font-size:24px; margin:0 0 8px; letter-spacing:-.05em;}
-.sidebar-card p{position:relative;font-size:13px; color:#B6C5E5; line-height:1.65; margin:0;}
-.status-ok{color:var(--green); font-weight:900; margin:10px 0 4px;}
-.status-warn{color:var(--amber); font-weight:900; margin:10px 0 4px;}
-.command-shell{
-  position:relative; overflow:hidden; border:1px solid rgba(103,232,249,.17); border-radius:34px; padding:22px 24px;
-  background:linear-gradient(135deg,rgba(14,22,40,.75),rgba(5,8,18,.72)); box-shadow:0 28px 120px rgba(0,0,0,.34);
+.landing h1{font-size:28px; line-height:1.2; font-weight:500; letter-spacing:-.02em; margin:0 0 34px; color:#f4f4f4;}
+.quick-row{display:flex; gap:8px; flex-wrap:wrap; justify-content:center; max-width:760px; margin-top:6px;}
+.quick-pill{border:1px solid var(--line); background:#111; color:#d6d6d6; border-radius:999px; padding:9px 13px; font-size:12px; font-weight:500;}
+.top-status{
+  display:flex; justify-content:flex-end; gap:8px; margin-bottom:14px; align-items:center;
 }
-.command-shell:before{content:""; position:absolute; inset:-1px; background:radial-gradient(circle at 8% 5%,rgba(103,232,249,.22),transparent 20%),radial-gradient(circle at 96% 0%,rgba(167,139,250,.22),transparent 26%); pointer-events:none;}
-.command-top{position:relative; display:flex; align-items:center; justify-content:space-between; gap:18px;}
-.brandbox{display:flex; align-items:center; gap:15px; min-width:0;}
-.logo-orb{width:56px;height:56px;border-radius:19px;display:grid;place-items:center;font-size:27px;font-weight:900;color:#03101B;background:linear-gradient(135deg,#67E8F9,#A78BFA); box-shadow:0 0 0 1px rgba(255,255,255,.18),0 0 38px rgba(103,232,249,.24);}
-.brandbox h1{font-size:31px; margin:0; letter-spacing:-.065em; line-height:1;}
-.brandbox p{font-size:13px;color:#B7C8EA;margin:8px 0 0;}
-.badges{display:flex; flex-wrap:wrap; justify-content:flex-end; gap:9px;}
-.badge{border:1px solid rgba(148,163,184,.22); background:rgba(15,23,42,.46); border-radius:999px; padding:9px 13px; font-size:12px; color:#E6EEFF; font-weight:800; white-space:nowrap; backdrop-filter:blur(10px);}
-.notice{border:1px solid rgba(251,191,36,.32); background:rgba(251,191,36,.075); border-radius:18px; padding:12px 16px; color:#FFE9A8; font-size:13px; line-height:1.55; margin:16px 0 26px;}
-.hero{min-height:42vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:18px 0 4px;}
-.hero-kicker{display:inline-flex; gap:10px; align-items:center; font-size:12px; color:var(--cyan); letter-spacing:.24em; font-weight:900; text-transform:uppercase; margin-bottom:16px;}
-.hero h2{font-size:clamp(44px,6vw,86px); line-height:.93; max-width:980px; margin:0; letter-spacing:-.085em; font-weight:900;}
-.hero h2 span{background:linear-gradient(90deg,#FFFFFF,#C7D2FE,#67E8F9); -webkit-background-clip:text; color:transparent;}
-.hero p{max-width:760px; margin:22px auto 0; color:#B7C7EA; font-size:17px; line-height:1.72;}
-.command-strip{display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:24px auto 0; max-width:950px;}
-.command-pill{border:1px solid rgba(148,163,184,.18); background:rgba(15,23,42,.46); border-radius:999px; padding:10px 14px; color:#DCE8FF; font-size:12px; font-weight:800; box-shadow:0 18px 40px rgba(0,0,0,.16);}
-.info-strip{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:8px 0 18px;}
-.info-card{border:1px solid rgba(148,163,184,.15); background:rgba(8,13,25,.62); border-radius:18px; padding:12px 14px;}
-.info-card small{display:block;color:#7F8CAB;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.13em;margin-bottom:5px;}
-.info-card b{font-size:14px;color:#F8FAFC;}
-.message-row{display:flex; gap:13px; margin:22px 0; align-items:flex-start;}
-.avatar{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;font-size:18px;flex:0 0 auto;}
-.avatar.user{background:linear-gradient(135deg,#FB4D63,#FF8A3D);}
-.avatar.ai{background:linear-gradient(135deg,#67E8F9,#A78BFA); color:#06101B;}
-.bubble{max-width:900px; border-radius:22px; padding:16px 18px; line-height:1.72; font-size:15px;}
-.bubble.user{background:rgba(251,77,99,.08); border:1px solid rgba(251,77,99,.18);}
-.bubble.ai{background:linear-gradient(135deg,rgba(15,23,42,.76),rgba(9,14,26,.70)); border:1px solid rgba(103,232,249,.17); box-shadow:0 18px 48px rgba(0,0,0,.18);}
-.agent-tag{display:inline-flex; gap:6px; align-items:center; padding:5px 9px; border-radius:999px; background:rgba(96,165,250,.10); border:1px solid rgba(96,165,250,.22); color:#C9DCFF; font-size:11px; font-weight:900; margin-bottom:10px;}
-[data-testid="stChatInput"]{background:rgba(3,5,12,.64); backdrop-filter:blur(20px); border-top:1px solid rgba(148,163,184,.10); padding-bottom:16px;}
-[data-testid="stChatInput"] textarea{border-radius:24px !important; border:1px solid rgba(103,232,249,.32) !important; background:rgba(12,18,34,.96) !important; color:#F8FAFC !important; min-height:58px !important; box-shadow:0 16px 60px rgba(0,0,0,.34) !important;}
-.footer-line{border-top:1px solid rgba(148,163,184,.13); margin:24px 0 0; padding:18px 0 6px; color:#7785A5; text-align:center; font-size:12px;}
-.about-card{border:1px solid rgba(103,232,249,.20);background:rgba(8,13,25,.70);border-radius:26px;padding:24px;line-height:1.75;}
-.stMarkdown a{color:#7DD3FC;} button[kind="secondary"]{border-radius:14px !important;}
-@media (max-width: 980px){.block-container{padding:.75rem .85rem 7rem}.command-top{align-items:flex-start;flex-direction:column}.badges{justify-content:flex-start}.brandbox h1{font-size:25px}.logo-orb{width:46px;height:46px;border-radius:15px}.info-strip{grid-template-columns:1fr}.hero{min-height:40vh}.hero h2{font-size:44px}.hero p{font-size:14px}.bubble{max-width:100%;font-size:14px}}
-@media (max-width:560px){.command-shell{border-radius:22px;padding:16px}.hero h2{font-size:36px}.notice{font-size:12px}.command-pill{font-size:11px;padding:8px 10px}}
+.mini-badge{border:1px solid var(--line); background:#0b0b0b; border-radius:999px; padding:7px 10px; color:var(--muted); font-size:12px; white-space:nowrap;}
+.notice-mini{color:#8d8d8d; font-size:12px; text-align:center; margin-top:22px;}
+.message-row{display:flex; gap:14px; margin:25px 0; align-items:flex-start;}
+.avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:15px;flex:0 0 auto;}
+.avatar.user{background:#ef4444;color:#fff;}
+.avatar.ai{background:#202020;color:#f1f1f1;border:1px solid #333;}
+.bubble{max-width:820px; line-height:1.72; font-size:15px; color:#f3f3f3;}
+.bubble.user{padding-top:5px; font-weight:500;}
+.bubble.ai{padding-top:2px;}
+.agent-tag{display:inline-flex; align-items:center; gap:6px; color:#9e9e9e; font-size:12px; margin-bottom:8px;}
+.thin-divider{height:1px; background:var(--line); margin:20px 0;}
+.about-card{border:1px solid var(--line);background:#080808;border-radius:16px;padding:24px;line-height:1.75;max-width:820px;margin:60px auto 0;}
+.about-card h2{font-size:26px; margin-top:0;}
+.footer-line{color:#6f6f6f; text-align:center; font-size:11px; margin:24px 0 4px;}
+[data-testid="stChatInput"]{
+  background:linear-gradient(180deg,rgba(0,0,0,0),#000 23%);
+  padding-bottom:22px;
+}
+[data-testid="stChatInput"] textarea{
+  border-radius:999px !important;
+  border:1px solid var(--input-border) !important;
+  background:var(--input) !important;
+  color:#fff !important;
+  min-height:56px !important;
+  box-shadow:none !important;
+  padding-left:18px!important;
+}
+[data-testid="stChatInput"] button{background:#f4f4f4!important; color:#000!important; border-radius:999px!important;}
+.stMarkdown a{color:#d1d5db;}
+button[kind="secondary"]{border-radius:12px !important;}
+@media (max-width: 900px){
+  .block-container{padding:1rem .9rem 7rem; max-width:100%;}
+  .landing{min-height:55vh;}
+  .landing h1{font-size:24px; margin-bottom:24px;}
+  .top-status{display:none;}
+  .quick-row{display:none;}
+  .message-row{gap:10px; margin:20px 0;}
+  .bubble{font-size:14px; max-width:100%;}
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -397,31 +408,27 @@ def call_llm(prompt: str, provider: str, model_id: str, openai_key: str, gemini_
     return primary
 
 # -----------------------------------------------------------------------------
-# Sidebar
+# Sidebar — quiet ChatGPT-like navigation
 # -----------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("""
-    <div class="sidebar-card">
+    <div class="sidebar-brand">
       <h2>⚙️ MechAI Pro</h2>
-      <p>Premium mechanical engineering copilot.<br>Chat-first. Project-aware. Agent-routed.</p>
+      <p>Mechanical AI copilot<br>Project-aware. Agent-routed.</p>
     </div>
     """, unsafe_allow_html=True)
-    lang = st.selectbox("Interface / الواجهة", ["English", "العربية"], index=0 if st.session_state.lang=="English" else 1, label_visibility="visible")
+
+    if st.button("✎ New chat", use_container_width=True):
+        st.session_state.messages = []
+        save_chat(st.session_state.project, [])
+        st.rerun()
+
+    lang = st.selectbox("Interface / الواجهة", ["English", "العربية"], index=0 if st.session_state.lang=="English" else 1)
     st.session_state.lang = lang
     tr = TEXT[lang]
 
-    view = st.radio("View", ["Chat", "About"], horizontal=True, index=0 if st.session_state.view=="Chat" else 1)
+    view = st.radio("View", ["Chat", "About"], horizontal=False, index=0 if st.session_state.view=="Chat" else 1)
     st.session_state.view = view
-
-    provider = st.selectbox("AI Provider", ["OpenAI / ChatGPT", "Gemini backup"], index=0 if "OpenAI" in st.session_state.provider else 1)
-    st.session_state.provider = provider
-    openai_key = get_openai_key(); gemini_key = get_gemini_key()
-    if "OpenAI" in provider:
-        st.markdown(f"<div class='{ 'status-ok' if openai_key else 'status-warn'}'>● OpenAI {tr['connected'] if openai_key else tr['missing']}</div>", unsafe_allow_html=True)
-        model_id = st.text_input("Model", value="gpt-4o-mini", label_visibility="visible")
-    else:
-        st.markdown(f"<div class='{ 'status-ok' if gemini_key else 'status-warn'}'>● Gemini {tr['connected'] if gemini_key else tr['missing']}</div>", unsafe_allow_html=True)
-        model_id = st.text_input("Model", value="gemini-2.5-flash-lite", label_visibility="visible")
 
     st.divider()
     st.caption("Projects")
@@ -434,7 +441,7 @@ with st.sidebar:
 
     c1, c2 = st.columns(2)
     with c1:
-        if st.button(tr["new"], use_container_width=True):
+        if st.button("+ Project", use_container_width=True):
             new_name = f"Project_{datetime.now().strftime('%H%M')}"
             if LOCAL_SAVE_ENABLED:
                 ensure_project(new_name)
@@ -449,10 +456,19 @@ with st.sidebar:
             save_chat(st.session_state.project, [])
             st.rerun()
 
-    st.caption("🔒 " + tr["session"])
+    st.divider()
+    provider = st.selectbox("AI", ["OpenAI / ChatGPT", "Gemini backup"], index=0 if "OpenAI" in st.session_state.provider else 1)
+    st.session_state.provider = provider
+    openai_key = get_openai_key(); gemini_key = get_gemini_key()
+    if "OpenAI" in provider:
+        st.markdown(f"<div class='{ 'status-ok' if openai_key else 'status-warn'}'>● OpenAI {tr['connected'] if openai_key else tr['missing']}</div>", unsafe_allow_html=True)
+        model_id = st.text_input("Model", value="gpt-4o-mini")
+    else:
+        st.markdown(f"<div class='{ 'status-ok' if gemini_key else 'status-warn'}'>● Gemini {tr['connected'] if gemini_key else tr['missing']}</div>", unsafe_allow_html=True)
+        model_id = st.text_input("Model", value="gemini-2.5-flash-lite")
 
-    with st.expander("Knowledge Vault", expanded=False):
-        pdfs = st.file_uploader("Upload PDF references", type=["pdf"], accept_multiple_files=True, label_visibility="visible")
+    with st.expander("Knowledge", expanded=False):
+        pdfs = st.file_uploader("Upload PDF references", type=["pdf"], accept_multiple_files=True)
         if pdfs:
             chunks=[]
             for f in pdfs:
@@ -461,102 +477,50 @@ with st.sidebar:
             st.session_state.kb_chunks = chunks
             st.success(f"Indexed {len(chunks)} chunks for this session.")
 
-    with st.expander("System Health", expanded=False):
-        st.write(f"Provider: `{provider}`")
-        st.write(f"Project: `{st.session_state.project}`")
-        st.write(f"Agent: `{AGENTS.get(st.session_state.last_agent, AGENTS['chief'])[0]}`")
-        st.write(f"Knowledge chunks: `{len(st.session_state.kb_chunks)}`")
+    st.caption("🔒 " + tr["session"])
 
 tr = TEXT[st.session_state.lang]
 openai_key = get_openai_key(); gemini_key = get_gemini_key()
-
-# -----------------------------------------------------------------------------
-# Main UI
-# -----------------------------------------------------------------------------
 agent_name = AGENTS.get(st.session_state.last_agent, AGENTS["chief"])[0]
-provider_badge = "AI OpenAI" if "OpenAI" in st.session_state.provider else "AI Gemini"
+provider_badge = "OpenAI" if "OpenAI" in st.session_state.provider else "Gemini"
 
+# -----------------------------------------------------------------------------
+# Main UI — minimal ChatGPT-style center
+# -----------------------------------------------------------------------------
 st.markdown(f"""
-<div class="command-shell">
-  <div class="command-top">
-    <div class="brandbox">
-      <div class="logo-orb">⚙️</div>
-      <div><h1>MechAI Pro</h1><p>Mechanical intelligence workspace for R&D, CAD automation, simulation, CFD, DFM and invention.</p></div>
-    </div>
-    <div class="badges">
-      <div class="badge">📁 {st.session_state.project}</div>
-      <div class="badge">{agent_name}</div>
-      <div class="badge">{provider_badge}</div>
-      <div class="badge">📚 {len(st.session_state.kb_chunks)} chunks</div>
-    </div>
-  </div>
+<div class="top-status">
+  <div class="mini-badge">📁 {html.escape(st.session_state.project)}</div>
+  <div class="mini-badge">{html.escape(agent_name)}</div>
+  <div class="mini-badge">AI {html.escape(provider_badge)}</div>
+  <div class="mini-badge">📚 {len(st.session_state.kb_chunks)} chunks</div>
 </div>
-<div class="notice">{tr['notice']}</div>
 """, unsafe_allow_html=True)
 
 if st.session_state.view == "About":
     st.markdown(f"""
     <div class="about-card">
-      <h2>{tr['about_title']}</h2>
-      <p>{tr['about']}</p>
-      <h3>What this version does</h3>
-      <ul>
-        <li>Routes engineering prompts to specialist agents.</li>
-        <li>Uses OpenAI/ChatGPT as primary provider, with Gemini as optional backup.</li>
-        <li>Indexes uploaded PDF references for the current session only.</li>
-        <li>Provides safe preliminary reasoning, not certified engineering approval.</li>
-      </ul>
+      <h2>{html.escape(tr['about_title'])}</h2>
+      <p>{html.escape(tr['about'])}</p>
+      <div class="thin-divider"></div>
+      <p><b>Public demo notice:</b> MechAI Pro does not replace professional engineering verification, certified calculations, CAD/FEA/CFD validation, code compliance, or safety review. Do not upload confidential files to the public version.</p>
     </div>
     """, unsafe_allow_html=True)
 else:
     if not st.session_state.messages:
+        greeting = "Good to see you, Nael." if st.session_state.lang == "English" else "أهلًا نائل، ماذا تريد أن تنجز اليوم؟"
         st.markdown(f"""
-        <div class="hero">
-          <div class="hero-kicker">AI Mechanical Engineering OS</div>
-          <h2><span>{tr['title']}</span></h2>
-          <p>{tr['subtitle']}</p>
-          <div class="command-strip">
-            <div class="command-pill">🔧 Design Review</div>
-            <div class="command-pill">🧩 CAD Automation</div>
-            <div class="command-pill">📊 FEA Setup</div>
-            <div class="command-pill">🌊 CFD / Thermal</div>
-            <div class="command-pill">🏭 DFM / DFA</div>
-            <div class="command-pill">💡 Invention</div>
+        <div class="landing">
+          <h1>{greeting}</h1>
+          <div class="quick-row">
+            <div class="quick-pill">DFM review</div>
+            <div class="quick-pill">FEA plan</div>
+            <div class="quick-pill">CFD setup</div>
+            <div class="quick-pill">SolidWorks macro</div>
           </div>
+          <div class="notice-mini">MechAI Pro is a public demo. Verify engineering outputs before use.</div>
         </div>
         """, unsafe_allow_html=True)
-        with st.expander(tr["prompt_lib"], expanded=False):
-            prompts = [
-                "Create a short DFM review for an injection molded plastic cover.",
-                "Build an ANSYS static structural simulation plan for a bracket loaded by 2 kN.",
-                "Generate a SolidWorks VBA macro to export all sheet metal flat patterns to DXF.",
-                "Calculate Reynolds number and pressure drop for water flow in a pipe.",
-            ]
-            for p in prompts:
-                if st.button(p, use_container_width=True):
-                    st.session_state.pending_prompt = p
-                    st.rerun()
     else:
-        st.markdown(f"""
-        <div class="info-strip">
-          <div class="info-card"><small>Routed Agent</small><b>{agent_name}</b></div>
-          <div class="info-card"><small>Provider</small><b>{provider_badge}</b></div>
-          <div class="info-card"><small>Knowledge</small><b>{len(st.session_state.kb_chunks)} session chunks</b></div>
-        </div>
-        """, unsafe_allow_html=True)
-        with st.expander("Engineering Context", expanded=False):
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.markdown("**Reference Brain**")
-                for r in REFERENCE_BRAIN.get(st.session_state.last_agent, REFERENCE_BRAIN["mechanical"]):
-                    st.write("• " + r)
-            with col_b:
-                st.markdown("**Available tool logic**")
-                st.write("• Beam / shaft sanity checks")
-                st.write("• Reynolds / pressure-drop equations")
-                st.write("• FEA / CFD setup guidance")
-                st.write("• DFM/DFA review structure")
-
         for m in st.session_state.messages:
             role = m.get("role", "assistant")
             content = m.get("content", "")
@@ -565,20 +529,20 @@ else:
                 st.markdown(f"""
                 <div class="message-row">
                   <div class="avatar user">☻</div>
-                  <div class="bubble user">{content}</div>
+                  <div class="bubble user">{html.escape(content)}</div>
                 </div>
                 """, unsafe_allow_html=True)
             else:
                 label = AGENTS.get(a, AGENTS["chief"])[0]
                 st.markdown(f"""
                 <div class="message-row">
-                  <div class="avatar ai">⚙️</div>
-                  <div class="bubble ai"><div class="agent-tag">{label}</div>
+                  <div class="avatar ai">⚙</div>
+                  <div class="bubble ai"><div class="agent-tag">{html.escape(label)} · {html.escape(provider_badge)}</div>
                 """, unsafe_allow_html=True)
                 st.markdown(content)
                 st.markdown("</div></div>", unsafe_allow_html=True)
 
-    st.markdown(f"<div class='footer-line'>{tr['footer']}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='footer-line'>{html.escape(tr['footer'])}</div>", unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
 # Chat input and execution
@@ -592,10 +556,8 @@ if user_prompt:
     retrieved = retrieve_chunks(user_prompt, st.session_state.kb_chunks)
     prompt = build_prompt(user_prompt, agent, retrieved)
     st.session_state.messages.append({"role":"user", "content":user_prompt, "time":datetime.now().isoformat(), "agent":agent})
-    with st.spinner("MechAI is engineering the response…"):
+    with st.spinner("Thinking…"):
         answer = call_llm(prompt, st.session_state.provider, model_id, openai_key, gemini_key)
     st.session_state.messages.append({"role":"assistant", "content":answer, "time":datetime.now().isoformat(), "agent":agent})
     save_chat(st.session_state.project, st.session_state.messages)
     st.rerun()
-
-st.markdown("<div class='composer-note'>MechAI Pro is a demo copilot. Verify calculations, CAD scripts and simulation assumptions before engineering use.</div>", unsafe_allow_html=True)
