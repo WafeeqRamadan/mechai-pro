@@ -1,0 +1,15 @@
+{
+  "title": "CAD / SolidWorks",
+  "refs": [
+    "SolidWorks API Help",
+    "SolidWorks VBA macro examples",
+    "Engineering drawing standards",
+    "STEP/DXF export practices"
+  ],
+  "rules": [
+    "Prefer parametric, editable CAD models.",
+    "Separate geometry creation, features, drawings, BOM, and exports.",
+    "Warn before destructive macros or file overwrites.",
+    "For macros, always explain how to run the macro and what SolidWorks objects it modifies."
+  ]
+}

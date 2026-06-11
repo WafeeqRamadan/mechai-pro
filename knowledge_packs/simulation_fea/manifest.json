@@ -1,0 +1,15 @@
+{
+  "title": "Simulation / FEA",
+  "refs": [
+    "ANSYS Theory Reference",
+    "NAFEMS verification and validation principles",
+    "Cook: Concepts and Applications of Finite Element Analysis",
+    "Practical FEA best practices"
+  ],
+  "rules": [
+    "Define the simulation objective before setup.",
+    "Check load paths, constraints, contacts, mesh quality, and convergence.",
+    "Validate FEA with hand calculations, test data, or benchmark cases.",
+    "Do not trust stress plots before checking assumptions, boundary conditions, and mesh convergence."
+  ]
+}
