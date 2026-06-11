@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-MechAI Pro v13 — ChatGPT Exact Minimal UI + Input Fix
-ChatGPT-like minimal interface with corrected full-width input bar.
+MechAI Pro v14 — Sidebar Restore + Engineering Workspaces
+ChatGPT-like minimal interface with stable sidebar toggle and restored engineering workspaces.
 Run: streamlit run app.py
 """
 import os, json, re, math, html
@@ -51,7 +51,9 @@ st.markdown(r"""
 }
 html,body,[class*="css"]{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;}
 .stApp{background:#000;color:var(--text);}
-#MainMenu, footer, header{visibility:hidden;height:0;}
+#MainMenu, footer{visibility:hidden;height:0;}
+header[data-testid="stHeader"]{background:rgba(0,0,0,0)!important;visibility:visible!important;height:2.75rem!important;}
+[data-testid="collapsedControl"]{visibility:visible!important;display:flex!important;opacity:1!important;z-index:10000!important;}
 .block-container{max-width:980px;padding:0 2rem 7.5rem;}
 [data-testid="stSidebar"]{background:#050505;border-right:1px solid #1f1f1f;min-width:270px!important;max-width:270px!important;}
 [data-testid="stSidebar"] *{color:var(--text);} 
@@ -61,6 +63,9 @@ html,body,[class*="css"]{font-family:Inter,system-ui,-apple-system,Segoe UI,sans
 .nav-btn.active{background:#2f2f2f;}
 .nav-btn:hover{background:#202020;}
 .side-label{color:#8f8f8f;font-weight:700;font-size:12px;margin:22px 0 8px;}
+.workspace-item{display:flex;gap:10px;align-items:center;color:#f4f4f4;font-size:14px;padding:8px 12px;border-radius:8px;margin:2px 0;}
+.workspace-item.active{background:#2f2f2f;}
+.workspace-item:hover{background:#202020;}
 .project-item{display:flex;gap:10px;align-items:center;color:#f4f4f4;font-size:14px;padding:8px 12px;border-radius:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .project-item:hover{background:#202020;}
 .user-chip{position:fixed;bottom:14px;left:12px;width:246px;border-top:1px solid #202020;padding-top:10px;color:#dcdcdc;font-size:13px;}
@@ -172,6 +177,28 @@ AGENTS = {
     "patent": ("💡 Invention & Patent", "Novelty, prior art framing, claims, prototype plan."),
 }
 
+WORKSPACES = {
+    "chief": "🧠 General engineering",
+    "mechanical": "🔧 Product R&D / Design",
+    "solidworks": "🧩 CAD / SolidWorks",
+    "fea": "📊 Simulation / FEA",
+    "cfd": "🌊 CFD / Thermal",
+    "manufacturing": "🏭 Manufacturing / DFM",
+    "materials": "🧪 Materials selection",
+    "patent": "💡 Innovation / Patent",
+}
+
+WORKSPACE_AGENT_HINT = {
+    "chief": "Use automatic routing from the user's question.",
+    "mechanical": "Bias the answer toward product R&D, mechanisms, sizing, GD&T, and mechanical design decisions.",
+    "solidworks": "Bias the answer toward CAD automation, SolidWorks API/VBA, drawings, BOM, DXF/STEP workflows.",
+    "fea": "Bias the answer toward ANSYS/SolidWorks Simulation, boundary conditions, mesh, convergence, and result checks.",
+    "cfd": "Bias the answer toward CFD, Fluent, Flow Simulation, turbulence, y+, pressure drop, and thermal-fluid validation.",
+    "manufacturing": "Bias the answer toward DFM/DFA, process selection, cost-down, FMEA, tooling, assembly, and manufacturing risk.",
+    "materials": "Bias the answer toward material selection, substitutions, datasheets, Ashby method, strength, temperature, and cost.",
+    "patent": "Bias the answer toward invention analysis, novelty, prototype planning, prior-art thinking, and patent-friendly wording.",
+}
+
 REFERENCE_BRAIN = {
     "mechanical": ["Shigley’s Mechanical Engineering Design", "Roark’s Formulas for Stress and Strain", "Machinery’s Handbook", "ASME Y14.5 GD&T"],
     "materials": ["Ashby Materials Selection", "ASM Handbook", "MatWeb-style datasheet reasoning", "CES material selection methodology"],
@@ -251,11 +278,15 @@ if "last_agent" not in st.session_state: st.session_state.last_agent = "chief"
 if "kb_chunks" not in st.session_state: st.session_state.kb_chunks = []
 if "view" not in st.session_state: st.session_state.view = "Chat"
 if "provider" not in st.session_state: st.session_state.provider = "OpenAI / ChatGPT"
+if "workspace" not in st.session_state: st.session_state.workspace = "chief"
 
 # -----------------------------------------------------------------------------
 # Brain
 # -----------------------------------------------------------------------------
 def route_agent(prompt: str) -> str:
+    # If the user selected a specific engineering workspace, keep that specialist
+    # unless the text clearly asks for another hard domain such as SolidWorks/CFD/etc.
+    selected_ws = st.session_state.get("workspace", "chief")
     q = prompt.lower()
     rules = [
         ("solidworks", ["solidworks", "vba", "macro", "swp", "drawing", "bom", "dxf", "step", "cad"]),
@@ -268,7 +299,7 @@ def route_agent(prompt: str) -> str:
     ]
     for agent, keys in rules:
         if any(k in q for k in keys): return agent
-    return "chief"
+    return selected_ws if selected_ws != "chief" else "chief"
 
 def extract_pdf_text(file) -> str:
     if PyPDF2 is None:
@@ -317,6 +348,8 @@ def build_prompt(user_prompt: str, agent: str, retrieved: List[str]) -> str:
     agent_name, agent_desc = AGENTS[agent]
     return f"""{SYSTEM_BASE}
 Current specialist: {agent_name} — {agent_desc}
+Selected workspace: {WORKSPACES.get(st.session_state.get("workspace", "chief"), "General engineering")}
+Workspace guidance: {WORKSPACE_AGENT_HINT.get(st.session_state.get("workspace", "chief"), "Use automatic routing.")}
 Reference brain to emulate as methodology, not copyrighted text:
 {ref_txt}
 
@@ -401,6 +434,17 @@ with st.sidebar:
 
     st.markdown('<div class="nav-btn">⌕&nbsp;&nbsp;Search chats</div>', unsafe_allow_html=True)
     st.markdown('<div class="nav-btn">▥&nbsp;&nbsp;Library</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="side-label">Engineering workspaces</div>', unsafe_allow_html=True)
+    ws_keys = list(WORKSPACES.keys())
+    ws_labels = [WORKSPACES[k] for k in ws_keys]
+    current_ws = st.session_state.get("workspace", "chief")
+    ws_label = st.radio("Workspace", ws_labels, index=ws_keys.index(current_ws) if current_ws in ws_keys else 0, label_visibility="collapsed")
+    new_ws = ws_keys[ws_labels.index(ws_label)]
+    if new_ws != st.session_state.workspace:
+        st.session_state.workspace = new_ws
+        st.session_state.last_agent = new_ws
+        st.rerun()
 
     view = st.radio("", ["Chat", "About"], horizontal=False, index=0 if st.session_state.view=="Chat" else 1, label_visibility="collapsed")
     st.session_state.view = view
