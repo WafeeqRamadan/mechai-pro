@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-MechAI Pro v6 Ultra Clean Chat UI
-Ultra-clean ChatGPT-style Mechanical Engineering Copilot with minimal landing UI.
-Run: streamlit run app_mechai_pro_v6_ultra_clean.py
+MechAI Pro v8 OpenAI Provider
+Public ChatGPT-style Mechanical Engineering Copilot with OpenAI as the primary provider and Gemini as optional backup.
+Run: streamlit run app.py
 """
 import os, json, re, uuid, math
 from datetime import datetime
@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 import streamlit as st
+
+try:
+    from openai import OpenAI
+except Exception:
+    OpenAI = None
 
 try:
     from google import genai
@@ -97,21 +102,21 @@ T = {
     "English": {
         "tagline":"Mechanical AI workspace for design, CAD automation, simulation, CFD, manufacturing, and invention.",
         "new_project":"+ New project", "save":"Save", "projects":"Projects", "settings":"Settings",
-        "api":"Gemini API Key", "model":"Model", "lang":"Language", "welcome":"What would you like to engineer today?",
+        "api":"API Key", "provider":"AI Provider", "model":"Model", "lang":"Language", "welcome":"What would you like to engineer today?",
         "welcome_sub":"Ask a focused engineering question. MechAI routes it to the right specialist and uses your project memory and uploaded references.",
         "input":"Message MechAI Pro…", "right":"Engineering Studio", "brain":"Active Brain", "agent":"Routed Agent",
         "refs":"Reference Brain", "tools":"Tools", "upload":"Knowledge Vault", "vision":"Vision input", "project":"Current project",
-        "no_key":"Gemini API key is missing. Add it in Streamlit Secrets as GEMINI_API_KEY.",
+        "no_key":"AI provider key is missing. Add OPENAI_API_KEY in Streamlit Secrets for OpenAI, or GEMINI_API_KEY for Gemini.",
         "nav":"View", "chat":"Chat", "about":"About", "clear":"Clear chat", "session":"Session-only demo: chats and uploads are not permanently saved on the public app.",
     },
     "العربية": {
         "tagline":"مساحة ذكاء اصطناعي ميكانيكية للتصميم، الأتمتة، المحاكاة، الموائع، التصنيع، والاختراع.",
         "new_project":"+ مشروع جديد", "save":"حفظ", "projects":"المشاريع", "settings":"الإعدادات",
-        "api":"مفتاح Gemini", "model":"الموديل", "lang":"اللغة", "welcome":"ماذا تريد أن تهندس اليوم؟",
+        "api":"مفتاح API", "provider":"مزود الذكاء", "model":"الموديل", "lang":"اللغة", "welcome":"ماذا تريد أن تهندس اليوم؟",
         "welcome_sub":"اكتب سؤالًا هندسيًا واضحًا. MechAI يوجهه للوكيل المناسب ويستخدم ذاكرة المشروع والمراجع المرفوعة.",
         "input":"اكتب إلى MechAI Pro…", "right":"استوديو الهندسة", "brain":"العقل النشط", "agent":"الوكيل المختار",
         "refs":"العقل المرجعي", "tools":"الأدوات", "upload":"خزنة المعرفة", "vision":"إدخال بصري", "project":"المشروع الحالي",
-        "no_key":"مفتاح Gemini غير موجود. أضفه في Streamlit Secrets باسم GEMINI_API_KEY.",
+        "no_key":"مفتاح مزود الذكاء غير موجود. أضف OPENAI_API_KEY في Streamlit Secrets لـ OpenAI، أو GEMINI_API_KEY لـ Gemini.",
         "nav":"العرض", "chat":"المحادثة", "about":"حول التطبيق", "clear":"مسح المحادثة", "session":"نسخة عرض مؤقتة: المحادثات والملفات لا يتم حفظها بشكل دائم في النسخة العامة.",
     }
 }
@@ -187,14 +192,26 @@ def clear_chat(project: str):
     if LOCAL_SAVE_ENABLED:
         save_chat(project, [])
 
-def get_api_key() -> str:
-    # Streamlit Cloud: store this in App settings > Secrets as GEMINI_API_KEY = "..."
+def get_secret_key(name: str) -> str:
+    # Streamlit Cloud: store API keys in App settings > Secrets, never in GitHub.
     try:
-        if hasattr(st, "secrets") and "GEMINI_API_KEY" in st.secrets:
-            return str(st.secrets["GEMINI_API_KEY"]).strip()
+        if hasattr(st, "secrets") and name in st.secrets:
+            return str(st.secrets[name]).strip()
     except Exception:
         pass
-    return os.getenv("GEMINI_API_KEY", "").strip()
+    return os.getenv(name, "").strip()
+
+def get_openai_key() -> str:
+    return get_secret_key("OPENAI_API_KEY")
+
+def get_gemini_key() -> str:
+    return get_secret_key("GEMINI_API_KEY")
+
+def normalize_provider(label: str) -> str:
+    label = (label or "").lower()
+    if "gemini" in label:
+        return "gemini"
+    return "openai"
 
 if "lang" not in st.session_state: st.session_state.lang = "English"
 if "project_names" not in st.session_state: st.session_state.project_names = ["RD_Lab"]
@@ -277,17 +294,84 @@ User question:
 {user_prompt}
 """
 
-def call_llm(prompt: str, model_id: str, api_key: str) -> str:
+def call_openai(prompt: str, model_id: str, api_key: str) -> str:
     if not api_key:
-        return "⚠️ Gemini API key is missing. Add it in the sidebar or set GEMINI_API_KEY in PowerShell."
+        return "⚠️ OpenAI API key is missing. Set OPENAI_API_KEY in Streamlit Secrets or PowerShell."
+    if OpenAI is None:
+        return "⚠️ OpenAI SDK is not installed. Run: pip install openai"
+
+    fallback_models = [
+        model_id,
+        "gpt-4o-mini",
+        "gpt-4.1-mini",
+    ]
+    fallback_models = list(dict.fromkeys([m.strip() for m in fallback_models if m and m.strip()]))
+    errors = []
+    client = OpenAI(api_key=api_key)
+    for m in fallback_models:
+        try:
+            resp = client.responses.create(
+                model=m,
+                instructions="You are MechAI Pro, a practical senior mechanical engineering copilot. Be precise, structured, and conservative about safety-critical claims.",
+                input=prompt,
+            )
+            txt = getattr(resp, "output_text", None)
+            if not txt:
+                txt = str(resp)
+            if m != model_id:
+                return f"_Note: selected OpenAI model was unavailable, so MechAI used `{m}` for this response._\n\n" + txt
+            return txt
+        except Exception as e:
+            errors.append(f"{m}: {e}")
+            msg = str(e).lower()
+            # Fallback on capacity, rate, temporary, and model availability errors.
+            if not any(code in msg for code in ["503", "unavailable", "overloaded", "rate", "429", "not found", "model", "does not exist", "invalid"]):
+                break
+    return "⚠️ OpenAI temporarily unavailable or the selected model is not enabled for this account. Try `gpt-4o-mini`, or use Gemini backup.\n\nDetails:\n" + "\n".join(errors[-3:])
+
+def call_gemini(prompt: str, model_id: str, api_key: str) -> str:
+    if not api_key:
+        return "⚠️ Gemini API key is missing. Set GEMINI_API_KEY in Streamlit Secrets or PowerShell."
     if genai is None:
         return "⚠️ google-genai is not installed. Run: pip install google-genai"
-    try:
-        client = genai.Client(api_key=api_key)
-        resp = client.models.generate_content(model=model_id, contents=prompt)
-        return getattr(resp, "text", None) or str(resp)
-    except Exception as e:
-        return f"⚠️ LLM error: {e}"
+
+    fallback_models = [
+        model_id,
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-flash",
+    ]
+    fallback_models = list(dict.fromkeys([m.strip() for m in fallback_models if m and m.strip()]))
+    errors = []
+    client = genai.Client(api_key=api_key)
+    for m in fallback_models:
+        try:
+            resp = client.models.generate_content(model=m, contents=prompt)
+            txt = getattr(resp, "text", None) or str(resp)
+            if m != model_id:
+                return f"_Note: selected Gemini model was busy, so MechAI used `{m}` for this response._\n\n" + txt
+            return txt
+        except Exception as e:
+            errors.append(f"{m}: {e}")
+            msg = str(e).lower()
+            if not any(code in msg for code in ["503", "unavailable", "overloaded", "high demand", "429", "resource_exhausted", "not found", "model"]):
+                break
+    return "⚠️ Gemini temporarily unavailable. Try again in a minute, or switch provider to OpenAI.\n\nDetails:\n" + "\n".join(errors[-3:])
+
+def call_llm(prompt: str, provider: str, model_id: str, openai_key: str, gemini_key: str) -> str:
+    provider = normalize_provider(provider)
+    if provider == "openai":
+        result = call_openai(prompt, model_id, openai_key)
+        # Optional automatic backup to Gemini only when OpenAI fails and Gemini key exists.
+        if result.startswith("⚠️") and gemini_key:
+            backup = call_gemini(prompt, "gemini-2.5-flash-lite", gemini_key)
+            return "_OpenAI provider failed, so MechAI used Gemini backup._\n\n" + backup
+        return result
+    result = call_gemini(prompt, model_id, gemini_key)
+    if result.startswith("⚠️") and openai_key:
+        backup = call_openai(prompt, "gpt-4o-mini", openai_key)
+        return "_Gemini provider failed, so MechAI used OpenAI backup._\n\n" + backup
+    return result
 
 # ----------------------------- Sidebar -----------------------------
 with st.sidebar:
@@ -296,12 +380,17 @@ with st.sidebar:
     st.session_state.lang = lang
     tr = T[lang]
     view = st.radio(tr["nav"], [tr["chat"], tr["about"]], horizontal=True)
-    api_key = get_api_key()
-    if api_key:
-        st.markdown("<div class='status-ok'>● Gemini connected</div>", unsafe_allow_html=True)
+    openai_key = get_openai_key()
+    gemini_key = get_gemini_key()
+    provider = st.selectbox(tr.get("provider", "AI Provider"), ["OpenAI / ChatGPT", "Gemini backup"], index=0)
+    provider_key = openai_key if normalize_provider(provider) == "openai" else gemini_key
+    if provider_key:
+        st.markdown(f"<div class='status-ok'>● {provider.split()[0]} connected</div>", unsafe_allow_html=True)
     else:
-        st.markdown("<div class='status-bad'>● Gemini key missing</div>", unsafe_allow_html=True)
-    model_id = st.text_input(tr["model"], value="gemini-2.5-flash")
+        missing = "OPENAI_API_KEY" if normalize_provider(provider) == "openai" else "GEMINI_API_KEY"
+        st.markdown(f"<div class='status-bad'>● {missing} missing</div>", unsafe_allow_html=True)
+    default_model = "gpt-4o-mini" if normalize_provider(provider) == "openai" else "gemini-2.5-flash-lite"
+    model_id = st.text_input(tr["model"], value=default_model)
     st.divider()
     st.caption(tr["projects"])
     projects = list_projects()
@@ -356,6 +445,7 @@ st.markdown(f"""
   <div class='pillrow'>
     <div class='pill'>📁 {st.session_state.project}</div>
     <div class='pill'>🤖 {AGENTS[st.session_state.last_agent][0]}</div>
+    <div class='pill'>AI {provider.split()[0]}</div>
     <div class='pill'>📚 {len(st.session_state.kb_chunks)} chunks</div>
   </div>
 </div>
@@ -368,7 +458,7 @@ if view == tr["about"]:
     <div class='about-card'>
       <h3>About MechAI Pro</h3>
       <p><b>MechAI Pro</b> is a public MVP of a mechanical engineering AI workspace for product R&D, CAD automation, FEA/CFD planning, DFM/DFA, material reasoning, and invention support.</p>
-      <p>This hosted version is designed as a demo. It routes engineering questions to specialist agents and can use uploaded references during the current session.</p>
+      <p>This hosted version is designed as a demo. It routes engineering questions to specialist agents and can use uploaded references during the current session. The AI engine can use OpenAI/ChatGPT models as the primary provider and Gemini as an optional backup.</p>
     </div>
     <div class='about-card'>
       <h3>Important engineering limitation</h3>
@@ -423,7 +513,7 @@ else:
         st.markdown("</div>", unsafe_allow_html=True)
 
 # ----------------------------- Chat input -----------------------------
-if not api_key:
+if not (openai_key if normalize_provider(provider) == "openai" else gemini_key):
     st.warning(tr["no_key"])
 
 user_prompt = st.chat_input(tr["input"])
@@ -433,7 +523,7 @@ if user_prompt:
     st.session_state.messages.append({"role":"user", "content":user_prompt, "time":datetime.now().isoformat(), "agent":agent})
     retrieved = retrieve_chunks(user_prompt, st.session_state.kb_chunks, k=4)
     prompt = build_prompt(user_prompt, agent, retrieved)
-    answer = call_llm(prompt, model_id, api_key)
+    answer = call_llm(prompt, provider, model_id, openai_key, gemini_key)
     st.session_state.messages.append({"role":"assistant", "content":answer, "time":datetime.now().isoformat(), "agent":agent})
     save_chat(st.session_state.project, st.session_state.messages)
     st.rerun()
