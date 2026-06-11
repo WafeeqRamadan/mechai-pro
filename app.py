@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-MechAI Pro v14 — Sidebar Restore + Engineering Workspaces
-ChatGPT-like minimal interface with stable sidebar toggle and restored engineering workspaces.
+MechAI Pro v15 — Minimal Sidebar Workspace Selector
+ChatGPT-like minimal interface with a cleaner sidebar, workspace selector, and reduced Streamlit chrome.
 Run: streamlit run app.py
 """
 import os, json, re, math, html
@@ -74,6 +74,12 @@ header[data-testid="stHeader"]{background:rgba(0,0,0,0)!important;visibility:vis
 [data-testid="stSidebar"] .stRadio > label,[data-testid="stSidebar"] .stSelectbox > label,[data-testid="stSidebar"] .stTextInput > label{color:#8f8f8f!important;font-size:12px!important;font-weight:650!important;}
 [data-testid="stSelectbox"] div[data-baseweb="select"] > div,[data-testid="stTextInput"] input{background:#111!important;border:1px solid #242424!important;border-radius:10px!important;color:#fff!important;min-height:40px;}
 [data-testid="stExpander"]{background:#080808!important;border:1px solid #222!important;border-radius:10px!important;overflow:hidden;}
+/* Hide Streamlit cloud chrome/noise while keeping sidebar collapse control */
+[data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stDeployButton, .viewerBadge_container__1QSob, .viewerBadge_link__1S137 {display:none!important; visibility:hidden!important;}
+header[data-testid="stHeader"]{height:2.4rem!important;background:#000!important;}
+[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label{padding:4px 0!important;}
+.workspace-select-note{color:#777;font-size:12px;line-height:1.45;margin:6px 0 14px;}
+
 .status-ok{color:var(--green);font-weight:650;font-size:12px;margin:8px 0;}.status-warn{color:var(--amber);font-weight:650;font-size:12px;margin:8px 0;}
 .landing{min-height:72vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
 .landing h1{font-size:24px;line-height:1.25;font-weight:400;letter-spacing:-.015em;margin:0 0 36px;color:#f4f4f4;}
@@ -435,18 +441,19 @@ with st.sidebar:
     st.markdown('<div class="nav-btn">⌕&nbsp;&nbsp;Search chats</div>', unsafe_allow_html=True)
     st.markdown('<div class="nav-btn">▥&nbsp;&nbsp;Library</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="side-label">Engineering workspaces</div>', unsafe_allow_html=True)
+    st.markdown('<div class="side-label">Workspace</div>', unsafe_allow_html=True)
     ws_keys = list(WORKSPACES.keys())
     ws_labels = [WORKSPACES[k] for k in ws_keys]
     current_ws = st.session_state.get("workspace", "chief")
-    ws_label = st.radio("Workspace", ws_labels, index=ws_keys.index(current_ws) if current_ws in ws_keys else 0, label_visibility="collapsed")
+    ws_label = st.selectbox("Workspace", ws_labels, index=ws_keys.index(current_ws) if current_ws in ws_keys else 0, label_visibility="collapsed")
     new_ws = ws_keys[ws_labels.index(ws_label)]
     if new_ws != st.session_state.workspace:
         st.session_state.workspace = new_ws
         st.session_state.last_agent = new_ws
         st.rerun()
+    st.markdown('<div class="workspace-select-note">Pick a workspace only when you want to bias the answer. MechAI still auto-routes from your question.</div>', unsafe_allow_html=True)
 
-    view = st.radio("", ["Chat", "About"], horizontal=False, index=0 if st.session_state.view=="Chat" else 1, label_visibility="collapsed")
+    view = st.radio("", ["Chat", "About"], horizontal=True, index=0 if st.session_state.view=="Chat" else 1, label_visibility="collapsed")
     st.session_state.view = view
 
     st.markdown('<div class="side-label">Projects</div>', unsafe_allow_html=True)
@@ -496,7 +503,7 @@ with st.sidebar:
             st.session_state.kb_chunks = chunks
             st.success(f"Indexed {len(chunks)} chunks for this session.")
 
-    st.markdown('<div class="user-chip">⚙️ Wafeeq / MechAI Pro</div>', unsafe_allow_html=True)
+    st.markdown('<div class="user-chip">Wafeeq · MechAI Pro</div>', unsafe_allow_html=True)
 
 tr = TEXT[st.session_state.lang]
 openai_key = get_openai_key(); gemini_key = get_gemini_key()
