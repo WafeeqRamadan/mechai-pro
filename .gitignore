@@ -1,0 +1,10 @@
+﻿.venv/
+__pycache__/
+*.pyc
+.env
+.streamlit/secrets.toml
+chat_history/
+projects/
+*.zip
+app_backup*.py
+app_old.py
