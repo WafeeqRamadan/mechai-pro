@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-MechAI Pro v18 — Knowledge-First Clean Single-File App
-- Internal knowledge packs are the primary source.
-- OpenAI/Gemini are optional polish/fallback only.
+MechAI Pro v19 — Internal Knowledge Only UI
+- Internal knowledge packs are the primary source and the only visible answer engine.
+- OpenAI/Gemini UI is removed from the public app.
+- External AI can be reintroduced later as a separate optional tool, not as the reference brain.
 - Fixed sidebar, minimal ChatGPT-like UI.
-- No raw knowledge pack text is displayed to users.
 Run: streamlit run app.py
 """
 from __future__ import annotations
@@ -19,15 +19,9 @@ from typing import Dict, List, Optional, Tuple
 
 import streamlit as st
 
-try:
-    from openai import OpenAI
-except Exception:
-    OpenAI = None
-
-try:
-    from google import genai
-except Exception:
-    genai = None
+# External AI providers are intentionally hidden/disabled in this public knowledge-first build.
+OpenAI = None
+genai = None
 
 try:
     import PyPDF2
@@ -405,8 +399,6 @@ if "view" not in st.session_state:
     st.session_state.view = "Chat"
 if "answer_mode" not in st.session_state:
     st.session_state.answer_mode = "Internal Knowledge Only"
-if "provider" not in st.session_state:
-    st.session_state.provider = "OpenAI / ChatGPT"
 if "project" not in st.session_state:
     st.session_state.project = "RD_Lab"
 
@@ -434,7 +426,7 @@ with st.sidebar:
     current_idx = ws_keys.index(st.session_state.workspace) if st.session_state.workspace in ws_keys else 0
     selected_label = st.selectbox("Workspace", ws_labels, index=current_idx, label_visibility="collapsed")
     st.session_state.workspace = ws_keys[ws_labels.index(selected_label)]
-    st.markdown('<div class="note">Workspace biases the internal search. MechAI still auto-routes from your question.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="note">Workspace biases the internal knowledge search. MechAI still auto-routes from your question.</div>', unsafe_allow_html=True)
 
     st.session_state.view = st.radio("View", ["Chat", "About"], horizontal=True, index=0 if st.session_state.view == "Chat" else 1)
 
@@ -451,13 +443,9 @@ with st.sidebar:
             st.session_state.messages = []
             st.rerun()
     with st.expander("Settings", expanded=False):
-        st.session_state.answer_mode = st.selectbox("Answer mode", ["Internal Knowledge Only", "Internal Knowledge + Optional AI polish", "External AI only"], index=["Internal Knowledge Only", "Internal Knowledge + Optional AI polish", "External AI only"].index(st.session_state.answer_mode))
-        st.session_state.provider = st.selectbox("Optional external AI", ["OpenAI / ChatGPT", "Gemini backup"], index=0 if st.session_state.provider.startswith("OpenAI") else 1)
+        st.caption("Mode: Internal Knowledge Only")
         st.caption(f"Internal knowledge packs: {len(load_docs())}")
-        if get_secret("OPENAI_API_KEY"):
-            st.caption("● OpenAI key available")
-        if get_secret("GEMINI_API_KEY"):
-            st.caption("● Gemini key available")
+        st.caption("External AI providers are hidden in this build. The reference brain is knowledge_packs.")
     st.markdown('<div class="user-chip">Wafeeq · MechAI Pro</div>', unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
@@ -467,7 +455,7 @@ if st.session_state.view == "About":
     st.markdown("""
 **MechAI Pro** is a knowledge-first mechanical engineering copilot prototype.
 
-Primary source: internal workspace knowledge packs. OpenAI/Gemini are optional aids for polishing or backup only.
+Primary source: internal workspace knowledge packs. OpenAI/Gemini are not visible in this public build and are not the reference brain.
 
 Public demo warning: do not upload confidential files. Verify all calculations, CAD scripts, simulation assumptions, standards compliance, and safety-critical claims before engineering use.
 """)
@@ -497,10 +485,7 @@ if user_prompt:
     agent = route_agent(user_prompt, selected_ws)
     hits = retrieve_knowledge(user_prompt, agent, top_k=3)
     answer = compose_internal_answer(user_prompt, agent, hits)
-    if st.session_state.answer_mode == "Internal Knowledge + Optional AI polish":
-        answer = external_polish(answer, user_prompt, hits, st.session_state.provider)
-    elif st.session_state.answer_mode == "External AI only":
-        answer = external_polish("No internal answer requested. Answer using general engineering reasoning and clearly state limitations.", user_prompt, hits, st.session_state.provider)
+    st.session_state.answer_mode = "Internal Knowledge Only"
     st.session_state.messages.append({"role":"user", "content":user_prompt, "agent":agent})
     st.session_state.messages.append({"role":"assistant", "content":answer, "agent":agent, "mode":st.session_state.answer_mode})
     st.rerun()
