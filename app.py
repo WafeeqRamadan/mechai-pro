@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-MechAI Pro v8 OpenAI Provider
-Public ChatGPT-style Mechanical Engineering Copilot with OpenAI as the primary provider and Gemini as optional backup.
+MechAI Pro v9 — World-Class Chat UI
+Public mechanical engineering AI copilot with OpenAI as primary provider and Gemini as optional backup.
 Run: streamlit run app.py
 """
-import os, json, re, uuid, math
+import os, json, re, math
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import streamlit as st
 
@@ -18,10 +18,8 @@ except Exception:
 
 try:
     from google import genai
-    from google.genai import types
 except Exception:
     genai = None
-    types = None
 
 try:
     import PyPDF2
@@ -30,95 +28,195 @@ except Exception:
 
 APP_DIR = Path(__file__).parent
 PROJECTS_DIR = APP_DIR / "projects"
-# Public deployment safety: by default, MechAI Pro does NOT persist user chats/files to local disk.
-# Enable local project persistence only for private/local installs by setting MECHAI_ENABLE_LOCAL_SAVE=true.
 LOCAL_SAVE_ENABLED = os.getenv("MECHAI_ENABLE_LOCAL_SAVE", "false").strip().lower() == "true"
 if LOCAL_SAVE_ENABLED:
     PROJECTS_DIR.mkdir(exist_ok=True)
 
-st.set_page_config(page_title="MechAI Pro", page_icon="⚙️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="MechAI Pro",
+    page_icon="⚙️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-# ----------------------------- CSS: Premium Chat-first UI -----------------------------
-st.markdown("""
+# -----------------------------------------------------------------------------
+# CSS — premium, calm, chat-first, mobile responsive
+# -----------------------------------------------------------------------------
+st.markdown(r"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 :root{
-  --bg:#070A12; --panel:#0D1321; --panel2:#111A2E; --line:#26334E; --muted:#9FB0D0;
-  --text:#F7FAFF; --accent:#6EE7F9; --accent2:#A78BFA; --danger:#FF5A6A; --good:#30D98B;
+  --bg:#060914;
+  --panel:#0B1020;
+  --panel2:#10182A;
+  --panel3:#111B31;
+  --line:rgba(148,163,184,.22);
+  --line2:rgba(110,231,249,.22);
+  --text:#F8FAFC;
+  --muted:#9AA8C7;
+  --muted2:#71809E;
+  --cyan:#6EE7F9;
+  --violet:#A78BFA;
+  --amber:#FBBF24;
+  --green:#22C55E;
+  --red:#FB4D63;
+  --blue:#60A5FA;
 }
-html, body, [class*="css"] { font-family: Inter, system-ui, sans-serif; }
-.stApp { background: radial-gradient(circle at 22% 0%, #18213D 0%, #070A12 36%, #05070D 100%); color:var(--text); }
-[data-testid="stSidebar"] { background: linear-gradient(180deg,#0B1020,#070A12); border-right:1px solid var(--line); }
-[data-testid="stSidebar"] * { color:var(--text); }
-.block-container { max-width: 1500px; padding: 1.2rem 2rem 7rem 2rem; }
-#MainMenu, footer, header { visibility: hidden; }
-.hero-mini { display:flex; align-items:center; justify-content:space-between; border:1px solid #243550; background:linear-gradient(135deg,rgba(17,26,46,.96),rgba(9,18,31,.90)); border-radius:24px; padding:18px 22px; margin-bottom:16px; box-shadow:0 18px 50px rgba(0,0,0,.28); }
-.brand { display:flex; gap:14px; align-items:center; }
-.logo { width:44px; height:44px; border-radius:14px; display:grid; place-items:center; background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#06101c; font-size:24px; font-weight:900; }
-.brand h1 { font-size:26px; margin:0; letter-spacing:-.04em; }
-.brand p { margin:2px 0 0 0; color:var(--muted); font-size:13px; }
-.pillrow { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
-.pill { border:1px solid #31405d; background:#111B2F; border-radius:999px; padding:8px 12px; font-size:12px; color:#DDE8FF; }
-.sidebar-card { border:1px solid #28354F; background:linear-gradient(135deg,#111A2D,#0B1221); border-radius:20px; padding:16px; margin:10px 0 18px 0; }
-.sidebar-title { font-size:19px; font-weight:800; margin-bottom:4px; }
-.sidebar-sub { font-size:12px; color:#9FB0D0; line-height:1.6; }
-.agent-chip { border:1px solid #31405d; background:#0D1526; border-radius:18px; padding:12px; margin:7px 0; }
-.agent-chip .name { font-weight:750; font-size:14px; }
-.agent-chip .desc { color:#9FB0D0; font-size:12px; margin-top:4px; }
-.stButton>button { border-radius:14px; border:1px solid #34415B; background:linear-gradient(180deg,#17233B,#10182B); color:#F7FAFF; min-height:42px; font-weight:650; }
-.stButton>button:hover { border-color:var(--accent); color:white; box-shadow:0 0 0 1px rgba(110,231,249,.25); }
-[data-testid="stChatMessage"] { background:transparent; border:none; }
-[data-testid="stChatMessage"] [data-testid="stMarkdownContainer"]{ font-size:15px; line-height:1.75; }
-.chat-welcome { text-align:center; padding:96px 16px 28px 16px; }
-.chat-welcome h2 { font-size:42px; letter-spacing:-.05em; margin:0 0 10px 0; }
-.chat-welcome p { color:var(--muted); font-size:16px; margin:0 auto; max-width:720px; }
-.quick-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:18px auto 0 auto; max-width:900px; }
-.quick-card { border:1px solid #28354F; background:rgba(17,26,46,.50); border-radius:16px; padding:12px; text-align:left; min-height:86px; }
-.quick-card b { display:block; margin-bottom:8px; }
-.quick-card span { color:#AEC0E1; font-size:12px; line-height:1.35; }
-.right-panel { border:1px solid #28354F; background:rgba(9,15,28,.68); border-radius:20px; padding:14px; position:sticky; top:16px; }
-.right-panel h3 { font-size:14px; margin:0 0 10px 0; color:#DDE8FF; }
-.kv { display:flex; justify-content:space-between; gap:12px; border-bottom:1px solid rgba(255,255,255,.07); padding:9px 0; font-size:12px; }
-.kv span:first-child{ color:#9FB0D0; } .kv span:last-child{ font-weight:700; }
-.toolbox { border:1px solid #25324A; background:#0C1424; border-radius:14px; padding:12px; margin-top:10px; }
-.toolbox-title { font-weight:750; font-size:13px; margin-bottom:6px; }
-.toolbox-text { color:#9FB0D0; font-size:12px; line-height:1.55; }
-.stChatInputContainer { background:rgba(8,11,18,.92)!important; border-top:1px solid rgba(255,255,255,.06); }
-textarea, input, .stTextInput input, .stTextArea textarea { border-radius:14px!important; }
-.demo-warning { border:1px solid rgba(255,184,77,.35); background:rgba(255,184,77,.08); color:#FFE6B5; border-radius:16px; padding:12px 14px; margin:10px 0 16px 0; font-size:13px; line-height:1.55; }
-.status-ok { color:#30D98B; font-weight:800; }
-.status-bad { color:#FFB84D; font-weight:800; }
-.app-footer { margin:34px 0 10px 0; padding:14px 0 0 0; border-top:1px solid rgba(255,255,255,.08); color:#8292B5; font-size:12px; text-align:center; }
-.about-card { border:1px solid #28354F; background:rgba(17,26,46,.55); border-radius:18px; padding:18px; margin:12px 0; }
-.about-card h3 { margin:0 0 8px 0; }
-.about-card p, .about-card li { color:#B5C6E6; line-height:1.7; }
-@media (max-width: 1100px){ .quick-grid{grid-template-columns:repeat(2,1fr);} .brand h1{font-size:20px;} .hero-mini{align-items:flex-start; flex-direction:column;} .pillrow{justify-content:flex-start; margin-top:10px;} }
-@media (max-width: 760px){ .block-container{padding:0.8rem 0.85rem 6rem 0.85rem;} .chat-welcome{padding:48px 8px 20px 8px;} .chat-welcome h2{font-size:28px;} .chat-welcome p{font-size:13px;} .quick-grid{grid-template-columns:1fr;} .hero-mini{border-radius:18px; padding:14px;} .logo{width:38px;height:38px;font-size:20px;} .brand h1{font-size:19px;} .brand p{font-size:12px;} .pill{font-size:11px; padding:7px 10px;} [data-testid="stSidebar"]{min-width:280px!important;} }
+html, body, [class*="css"]{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;}
+.stApp{
+  color:var(--text);
+  background:
+    radial-gradient(circle at 15% -10%, rgba(96,165,250,.22), transparent 28%),
+    radial-gradient(circle at 85% 0%, rgba(167,139,250,.18), transparent 32%),
+    linear-gradient(180deg,#070B16 0%, #050712 100%);
+}
+#MainMenu, footer, header{visibility:hidden;}
+.block-container{max-width:1180px; padding:1.05rem 1.45rem 7.5rem 1.45rem;}
+[data-testid="stSidebar"]{
+  background:linear-gradient(180deg,rgba(10,15,30,.98),rgba(5,8,18,.98));
+  border-right:1px solid var(--line);
+  box-shadow:18px 0 60px rgba(0,0,0,.28);
+}
+[data-testid="stSidebar"] *{color:var(--text);} 
+[data-testid="stSidebar"] .stButton button{
+  border-radius:16px; border:1px solid rgba(96,165,250,.28); background:rgba(17,24,39,.82); color:#fff;
+  height:46px; font-weight:700;
+}
+[data-testid="stSidebar"] .stButton button:hover{border-color:rgba(110,231,249,.55); background:rgba(30,41,59,.92);}
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+[data-testid="stTextInput"] input{
+  background:rgba(10,14,26,.92) !important; border:1px solid rgba(148,163,184,.16) !important; border-radius:14px !important;
+}
+[data-testid="stExpander"]{
+  background:rgba(8,12,24,.72); border:1px solid var(--line) !important; border-radius:18px !important; overflow:hidden;
+}
+.sidebar-card{
+  border:1px solid rgba(110,231,249,.18);
+  background:linear-gradient(135deg,rgba(20,28,50,.92),rgba(10,15,30,.92));
+  border-radius:24px; padding:22px 20px; margin:10px 0 24px;
+  box-shadow:0 20px 70px rgba(0,0,0,.25);
+}
+.sidebar-card h2{font-size:24px; margin:0 0 8px; letter-spacing:-.05em;}
+.sidebar-card p{font-size:13px; color:#B6C5E5; line-height:1.65; margin:0;}
+.status-ok{color:var(--green); font-weight:800; margin:8px 0 4px;}
+.status-warn{color:var(--amber); font-weight:800; margin:8px 0 4px;}
+.topbar{
+  position:relative; overflow:hidden;
+  border:1px solid rgba(110,231,249,.20);
+  background:linear-gradient(135deg,rgba(16,24,43,.94),rgba(8,13,24,.90));
+  border-radius:28px; padding:18px 20px; margin:6px 0 18px;
+  box-shadow:0 24px 90px rgba(0,0,0,.30);
+}
+.topbar:before{
+  content:""; position:absolute; inset:-2px; pointer-events:none;
+  background:radial-gradient(circle at 4% 10%,rgba(110,231,249,.20),transparent 22%),radial-gradient(circle at 88% 0%,rgba(167,139,250,.18),transparent 24%);
+}
+.topbar-inner{position:relative; display:flex; justify-content:space-between; align-items:center; gap:18px;}
+.brandbox{display:flex; align-items:center; gap:14px; min-width:0;}
+.logo-orb{
+  width:54px;height:54px;border-radius:18px;display:grid;place-items:center;font-size:27px;font-weight:900;color:#06101B;
+  background:linear-gradient(135deg,#6EE7F9 0%,#A78BFA 100%); box-shadow:0 0 34px rgba(110,231,249,.25);
+}
+.brandbox h1{font-size:30px; margin:0; letter-spacing:-.06em; line-height:1;}
+.brandbox p{font-size:13px; color:#B8C7EA; margin:7px 0 0;}
+.badges{display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px;}
+.badge{
+  border:1px solid rgba(148,163,184,.25); background:rgba(15,23,42,.66); border-radius:999px;
+  padding:9px 13px; font-size:12px; color:#DDE7FF; font-weight:700; white-space:nowrap;
+}
+.notice{
+  border:1px solid rgba(251,191,36,.36); background:linear-gradient(90deg,rgba(251,191,36,.11),rgba(251,191,36,.045));
+  border-radius:18px; padding:12px 16px; color:#FFE9A8; font-size:13px; line-height:1.55; margin:0 0 22px;
+}
+.hero{
+  min-height:44vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+  padding:18px 0 10px;
+}
+.hero-kicker{font-size:12px; color:var(--cyan); letter-spacing:.22em; font-weight:900; text-transform:uppercase; margin-bottom:14px;}
+.hero h2{font-size:clamp(40px,5vw,76px); line-height:.98; max-width:900px; margin:0; letter-spacing:-.075em; font-weight:900;}
+.hero p{max-width:760px; margin:20px auto 22px; color:#B7C7EA; font-size:17px; line-height:1.7;}
+.quick-grid{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; max-width:900px; width:100%; margin-top:8px;}
+.quick-chip{
+  border:1px solid rgba(148,163,184,.18); background:rgba(15,23,42,.48); border-radius:18px; padding:14px 13px; text-align:left;
+  box-shadow:0 18px 40px rgba(0,0,0,.16);
+}
+.quick-chip b{font-size:13px; display:block; margin-bottom:5px;}
+.quick-chip span{font-size:12px; color:#AAB9D7; line-height:1.5;}
+.info-strip{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:0 0 18px;}
+.info-card{border:1px solid rgba(148,163,184,.16); background:rgba(8,13,25,.55); border-radius:18px; padding:12px 14px;}
+.info-card small{display:block;color:#7F8CAB;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;margin-bottom:5px;}
+.info-card b{font-size:14px;color:#F8FAFC;}
+.message-row{display:flex; gap:13px; margin:22px 0; align-items:flex-start;}
+.avatar{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;font-size:19px;flex:0 0 auto;}
+.avatar.user{background:linear-gradient(135deg,#FB4D63,#FF8A3D);}
+.avatar.ai{background:linear-gradient(135deg,#6EE7F9,#A78BFA); color:#06101B;}
+.bubble{max-width:860px; border-radius:22px; padding:16px 18px; line-height:1.72; font-size:15px;}
+.bubble.user{background:rgba(251,77,99,.08); border:1px solid rgba(251,77,99,.18);}
+.bubble.ai{background:linear-gradient(135deg,rgba(15,23,42,.76),rgba(9,14,26,.70)); border:1px solid rgba(110,231,249,.18); box-shadow:0 18px 48px rgba(0,0,0,.18);}
+.bubble p{margin:0 0 .75rem;} .bubble ul,.bubble ol{margin-top:.2rem;} .bubble h1,.bubble h2,.bubble h3{letter-spacing:-.04em;}
+.agent-tag{display:inline-flex; gap:6px; align-items:center; padding:5px 9px; border-radius:999px; background:rgba(96,165,250,.10); border:1px solid rgba(96,165,250,.22); color:#C9DCFF; font-size:11px; font-weight:800; margin-bottom:10px;}
+.composer-note{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;color:#64748B;font-size:11px;text-align:center;z-index:999;width:100%;pointer-events:none;}
+[data-testid="stChatInput"]{background:rgba(5,7,13,.30); backdrop-filter:blur(16px); border-top:1px solid rgba(148,163,184,.10); padding-bottom:16px;}
+[data-testid="stChatInput"] textarea{
+  border-radius:22px !important; border:1px solid rgba(110,231,249,.28) !important;
+  background:rgba(15,23,42,.92) !important; color:#F8FAFC !important; min-height:54px !important;
+  box-shadow:0 12px 44px rgba(0,0,0,.28) !important;
+}
+.footer-line{border-top:1px solid rgba(148,163,184,.14); margin:22px 0 0; padding:18px 0 6px; color:#7785A5; text-align:center; font-size:12px;}
+.about-card{border:1px solid rgba(110,231,249,.20);background:rgba(10,15,30,.72);border-radius:24px;padding:24px;line-height:1.75;}
+/* Streamlit default content cleanup */
+.stMarkdown a{color:#7DD3FC;}
+button[kind="secondary"]{border-radius:14px !important;}
+@media (max-width: 980px){
+  .block-container{padding:0.75rem 0.85rem 7rem;}
+  .topbar-inner{align-items:flex-start; flex-direction:column;}
+  .badges{justify-content:flex-start;}
+  .brandbox h1{font-size:25px;}
+  .logo-orb{width:46px;height:46px;border-radius:15px;}
+  .quick-grid{grid-template-columns:1fr 1fr;}
+  .info-strip{grid-template-columns:1fr;}
+  .hero{min-height:42vh; padding-top:12px;}
+  .hero h2{font-size:42px;}
+  .hero p{font-size:14px;}
+  .bubble{max-width:100%; font-size:14px;}
+}
+@media (max-width: 560px){
+  .quick-grid{grid-template-columns:1fr;}
+  .hero h2{font-size:34px;}
+  .topbar{border-radius:20px;padding:15px;}
+  .notice{font-size:12px;}
+}
 </style>
 """, unsafe_allow_html=True)
 
-# ----------------------------- Localization -----------------------------
-T = {
+# -----------------------------------------------------------------------------
+# Text / Agents / Reference Brain
+# -----------------------------------------------------------------------------
+TEXT = {
     "English": {
-        "tagline":"Mechanical AI workspace for design, CAD automation, simulation, CFD, manufacturing, and invention.",
-        "new_project":"+ New project", "save":"Save", "projects":"Projects", "settings":"Settings",
-        "api":"API Key", "provider":"AI Provider", "model":"Model", "lang":"Language", "welcome":"What would you like to engineer today?",
-        "welcome_sub":"Ask a focused engineering question. MechAI routes it to the right specialist and uses your project memory and uploaded references.",
-        "input":"Message MechAI Pro…", "right":"Engineering Studio", "brain":"Active Brain", "agent":"Routed Agent",
-        "refs":"Reference Brain", "tools":"Tools", "upload":"Knowledge Vault", "vision":"Vision input", "project":"Current project",
-        "no_key":"AI provider key is missing. Add OPENAI_API_KEY in Streamlit Secrets for OpenAI, or GEMINI_API_KEY for Gemini.",
-        "nav":"View", "chat":"Chat", "about":"About", "clear":"Clear chat", "session":"Session-only demo: chats and uploads are not permanently saved on the public app.",
+        "input":"Message MechAI Pro…",
+        "title":"What would you like to engineer today?",
+        "subtitle":"A calm, specialist-routed engineering workspace for design, CAD automation, simulation, CFD, DFM and invention work.",
+        "notice":"⚠️ Demo notice: MechAI Pro is an engineering copilot prototype. It does not replace professional engineering verification, certified calculations, CAD/FEA/CFD validation, code compliance, or safety review. Public version is session-only; do not upload confidential files.",
+        "about_title":"About MechAI Pro",
+        "about":"MechAI Pro is a public mechanical engineering AI copilot demo. It routes questions to specialist engineering agents, uses uploaded references within the current session, and can call OpenAI/ChatGPT as the primary provider with Gemini as backup. Treat all outputs as preliminary engineering assistance and verify them before use.",
+        "clear":"Clear chat", "new":"New project", "session":"Session-only public demo. Chats and uploads are not permanently saved.",
+        "connected":"connected", "missing":"key missing",
+        "prompt_lib":"Prompt Library / مكتبة الأوامر",
+        "footer":"MechAI Pro · Public Demo · Mechanical Engineering AI Copilot · Verify all outputs before engineering use",
     },
     "العربية": {
-        "tagline":"مساحة ذكاء اصطناعي ميكانيكية للتصميم، الأتمتة، المحاكاة، الموائع، التصنيع، والاختراع.",
-        "new_project":"+ مشروع جديد", "save":"حفظ", "projects":"المشاريع", "settings":"الإعدادات",
-        "api":"مفتاح API", "provider":"مزود الذكاء", "model":"الموديل", "lang":"اللغة", "welcome":"ماذا تريد أن تهندس اليوم؟",
-        "welcome_sub":"اكتب سؤالًا هندسيًا واضحًا. MechAI يوجهه للوكيل المناسب ويستخدم ذاكرة المشروع والمراجع المرفوعة.",
-        "input":"اكتب إلى MechAI Pro…", "right":"استوديو الهندسة", "brain":"العقل النشط", "agent":"الوكيل المختار",
-        "refs":"العقل المرجعي", "tools":"الأدوات", "upload":"خزنة المعرفة", "vision":"إدخال بصري", "project":"المشروع الحالي",
-        "no_key":"مفتاح مزود الذكاء غير موجود. أضف OPENAI_API_KEY في Streamlit Secrets لـ OpenAI، أو GEMINI_API_KEY لـ Gemini.",
-        "nav":"العرض", "chat":"المحادثة", "about":"حول التطبيق", "clear":"مسح المحادثة", "session":"نسخة عرض مؤقتة: المحادثات والملفات لا يتم حفظها بشكل دائم في النسخة العامة.",
-    }
+        "input":"اكتب طلبك الهندسي…",
+        "title":"ماذا تريد أن تصمم أو تحلل اليوم؟",
+        "subtitle":"مساحة عمل هندسية ذكية للتصميم، CAD، المحاكاة، CFD، التصنيع، والاختراع.",
+        "notice":"⚠️ تنبيه: MechAI Pro نموذج أولي لمساعد هندسي. لا يغني عن المراجعة الهندسية الاحترافية، الحسابات المعتمدة، تحقق CAD/FEA/CFD، الالتزام بالكود، أو مراجعة السلامة. النسخة العامة مؤقتة؛ لا ترفع ملفات سرية.",
+        "about_title":"حول MechAI Pro",
+        "about":"MechAI Pro هو نموذج عام لمساعد ذكاء اصطناعي هندسي ميكانيكي. يوجّه الأسئلة لوكلاء متخصصين، ويستخدم المراجع المرفوعة خلال الجلسة الحالية فقط، ويدعم OpenAI/ChatGPT كمزود أساسي مع Gemini كاحتياطي. جميع النتائج مبدئية ويجب التحقق منها هندسيًا قبل الاستخدام.",
+        "clear":"مسح المحادثة", "new":"مشروع جديد", "session":"نسخة عامة مؤقتة: لا يتم حفظ المحادثات والملفات بشكل دائم.",
+        "connected":"متصل", "missing":"المفتاح غير موجود",
+        "prompt_lib":"Prompt Library / مكتبة الأوامر",
+        "footer":"MechAI Pro · نسخة عامة · مساعد ذكاء اصطناعي للهندسة الميكانيكية · تحقق من جميع النتائج قبل الاستخدام الهندسي",
+    },
 }
 
 AGENTS = {
@@ -148,7 +246,9 @@ Never pretend you performed real FEA/CFD/CAD execution unless the user provided 
 Use SI units by default and flag missing inputs.
 """
 
-# ----------------------------- State / Storage -----------------------------
+# -----------------------------------------------------------------------------
+# State / persistence
+# -----------------------------------------------------------------------------
 def slugify(name: str) -> str:
     s = re.sub(r"[^\w\-\s]", "", name.strip(), flags=re.UNICODE)
     s = re.sub(r"\s+", "_", s)
@@ -161,25 +261,25 @@ def ensure_project(name: str):
     if not LOCAL_SAVE_ENABLED:
         return
     p = project_path(name); p.mkdir(exist_ok=True)
-    (p/"files").mkdir(exist_ok=True)
-    if not (p/"chat.json").exists(): (p/"chat.json").write_text("[]", encoding="utf-8")
-    if not (p/"memory.json").exists(): (p/"memory.json").write_text(json.dumps({"created":datetime.now().isoformat(),"notes":[]}, ensure_ascii=False, indent=2), encoding="utf-8")
+    if not (p/"chat.json").exists():
+        (p/"chat.json").write_text("[]", encoding="utf-8")
 
 def list_projects():
     if not LOCAL_SAVE_ENABLED:
         return st.session_state.get("project_names", ["RD_Lab"])
     names = [p.name for p in PROJECTS_DIR.iterdir() if p.is_dir()]
     if not names:
-        ensure_project("RD_Lab")
-        names = ["RD_Lab"]
+        ensure_project("RD_Lab"); names = ["RD_Lab"]
     return sorted(names)
 
 def load_chat(project: str) -> List[Dict]:
     if not LOCAL_SAVE_ENABLED:
         return []
     ensure_project(project)
-    try: return json.loads((project_path(project)/"chat.json").read_text(encoding="utf-8"))
-    except Exception: return []
+    try:
+        return json.loads((project_path(project)/"chat.json").read_text(encoding="utf-8"))
+    except Exception:
+        return []
 
 def save_chat(project: str, messages: List[Dict]):
     if not LOCAL_SAVE_ENABLED:
@@ -187,13 +287,7 @@ def save_chat(project: str, messages: List[Dict]):
     ensure_project(project)
     (project_path(project)/"chat.json").write_text(json.dumps(messages, ensure_ascii=False, indent=2), encoding="utf-8")
 
-def clear_chat(project: str):
-    st.session_state.messages = []
-    if LOCAL_SAVE_ENABLED:
-        save_chat(project, [])
-
 def get_secret_key(name: str) -> str:
-    # Streamlit Cloud: store API keys in App settings > Secrets, never in GitHub.
     try:
         if hasattr(st, "secrets") and name in st.secrets:
             return str(st.secrets[name]).strip()
@@ -207,20 +301,18 @@ def get_openai_key() -> str:
 def get_gemini_key() -> str:
     return get_secret_key("GEMINI_API_KEY")
 
-def normalize_provider(label: str) -> str:
-    label = (label or "").lower()
-    if "gemini" in label:
-        return "gemini"
-    return "openai"
-
 if "lang" not in st.session_state: st.session_state.lang = "English"
 if "project_names" not in st.session_state: st.session_state.project_names = ["RD_Lab"]
 if "project" not in st.session_state: st.session_state.project = list_projects()[0]
 if "messages" not in st.session_state: st.session_state.messages = load_chat(st.session_state.project)
 if "last_agent" not in st.session_state: st.session_state.last_agent = "chief"
 if "kb_chunks" not in st.session_state: st.session_state.kb_chunks = []
+if "view" not in st.session_state: st.session_state.view = "Chat"
+if "provider" not in st.session_state: st.session_state.provider = "OpenAI / ChatGPT"
 
-# ----------------------------- Brain -----------------------------
+# -----------------------------------------------------------------------------
+# Brain
+# -----------------------------------------------------------------------------
 def route_agent(prompt: str) -> str:
     q = prompt.lower()
     rules = [
@@ -237,12 +329,15 @@ def route_agent(prompt: str) -> str:
     return "chief"
 
 def extract_pdf_text(file) -> str:
-    if PyPDF2 is None: return ""
+    if PyPDF2 is None:
+        return ""
     reader = PyPDF2.PdfReader(file)
     pages=[]
     for i,p in enumerate(reader.pages[:80]):
-        try: pages.append(f"[Page {i+1}]\n" + (p.extract_text() or ""))
-        except Exception: pass
+        try:
+            pages.append(f"[Page {i+1}]\n" + (p.extract_text() or ""))
+        except Exception:
+            pass
     return "\n".join(pages)
 
 def chunk_text(text: str, size=1400, overlap=180):
@@ -262,7 +357,6 @@ def retrieve_chunks(query: str, chunks: List[str], k=4):
 
 def local_tool_hint(prompt: str) -> str:
     q = prompt.lower()
-    # Simple deterministic calculators if numbers are obvious
     if "reynolds" in q:
         return "Tool available: Reynolds number Re = rho*V*D/mu. Ask for rho, velocity, diameter, viscosity if missing."
     if "pressure drop" in q:
@@ -296,17 +390,11 @@ User question:
 
 def call_openai(prompt: str, model_id: str, api_key: str) -> str:
     if not api_key:
-        return "⚠️ OpenAI API key is missing. Set OPENAI_API_KEY in Streamlit Secrets or PowerShell."
+        return "⚠️ OpenAI API key is missing. Set OPENAI_API_KEY in Streamlit Secrets."
     if OpenAI is None:
         return "⚠️ OpenAI SDK is not installed. Run: pip install openai"
-
-    fallback_models = [
-        model_id,
-        "gpt-4o-mini",
-        "gpt-4.1-mini",
-    ]
-    fallback_models = list(dict.fromkeys([m.strip() for m in fallback_models if m and m.strip()]))
-    errors = []
+    fallback_models = list(dict.fromkeys([model_id, "gpt-4o-mini", "gpt-4.1-mini"]))
+    errors=[]
     client = OpenAI(api_key=api_key)
     for m in fallback_models:
         try:
@@ -315,218 +403,248 @@ def call_openai(prompt: str, model_id: str, api_key: str) -> str:
                 instructions="You are MechAI Pro, a practical senior mechanical engineering copilot. Be precise, structured, and conservative about safety-critical claims.",
                 input=prompt,
             )
-            txt = getattr(resp, "output_text", None)
-            if not txt:
-                txt = str(resp)
+            txt = getattr(resp, "output_text", None) or str(resp)
             if m != model_id:
-                return f"_Note: selected OpenAI model was unavailable, so MechAI used `{m}` for this response._\n\n" + txt
+                return f"_Note: selected OpenAI model was unavailable, so MechAI used `{m}`._\n\n" + txt
             return txt
         except Exception as e:
             errors.append(f"{m}: {e}")
             msg = str(e).lower()
-            # Fallback on capacity, rate, temporary, and model availability errors.
-            if not any(code in msg for code in ["503", "unavailable", "overloaded", "rate", "429", "not found", "model", "does not exist", "invalid"]):
+            if not any(x in msg for x in ["503", "unavailable", "overloaded", "rate", "429", "not found", "model", "does not exist", "invalid"]):
                 break
-    return "⚠️ OpenAI temporarily unavailable or the selected model is not enabled for this account. Try `gpt-4o-mini`, or use Gemini backup.\n\nDetails:\n" + "\n".join(errors[-3:])
+    return "⚠️ OpenAI provider failed. Check API billing/quota/key/model access.\n\nDetails:\n" + "\n".join(errors[-3:])
 
 def call_gemini(prompt: str, model_id: str, api_key: str) -> str:
     if not api_key:
-        return "⚠️ Gemini API key is missing. Set GEMINI_API_KEY in Streamlit Secrets or PowerShell."
+        return "⚠️ Gemini API key is missing. Set GEMINI_API_KEY in Streamlit Secrets."
     if genai is None:
         return "⚠️ google-genai is not installed. Run: pip install google-genai"
-
-    fallback_models = [
-        model_id,
-        "gemini-2.5-flash-lite",
-        "gemini-2.0-flash-lite",
-        "gemini-1.5-flash",
-    ]
-    fallback_models = list(dict.fromkeys([m.strip() for m in fallback_models if m and m.strip()]))
-    errors = []
+    fallback_models = list(dict.fromkeys([model_id, "gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-1.5-flash"]))
+    errors=[]
     client = genai.Client(api_key=api_key)
     for m in fallback_models:
         try:
             resp = client.models.generate_content(model=m, contents=prompt)
             txt = getattr(resp, "text", None) or str(resp)
             if m != model_id:
-                return f"_Note: selected Gemini model was busy, so MechAI used `{m}` for this response._\n\n" + txt
+                return f"_Note: selected Gemini model was busy, so MechAI used `{m}`._\n\n" + txt
             return txt
         except Exception as e:
             errors.append(f"{m}: {e}")
             msg = str(e).lower()
-            if not any(code in msg for code in ["503", "unavailable", "overloaded", "high demand", "429", "resource_exhausted", "not found", "model"]):
+            if not any(x in msg for x in ["503", "unavailable", "overloaded", "high demand", "429", "resource_exhausted", "not found", "model"]):
                 break
-    return "⚠️ Gemini temporarily unavailable. Try again in a minute, or switch provider to OpenAI.\n\nDetails:\n" + "\n".join(errors[-3:])
+    return "⚠️ Gemini provider failed.\n\nDetails:\n" + "\n".join(errors[-3:])
 
 def call_llm(prompt: str, provider: str, model_id: str, openai_key: str, gemini_key: str) -> str:
-    provider = normalize_provider(provider)
-    if provider == "openai":
-        result = call_openai(prompt, model_id, openai_key)
-        # Optional automatic backup to Gemini only when OpenAI fails and Gemini key exists.
-        if result.startswith("⚠️") and gemini_key:
-            backup = call_gemini(prompt, "gemini-2.5-flash-lite", gemini_key)
-            return "_OpenAI provider failed, so MechAI used Gemini backup._\n\n" + backup
-        return result
-    result = call_gemini(prompt, model_id, gemini_key)
-    if result.startswith("⚠️") and openai_key:
-        backup = call_openai(prompt, "gpt-4o-mini", openai_key)
-        return "_Gemini provider failed, so MechAI used OpenAI backup._\n\n" + backup
-    return result
+    if "Gemini" in provider:
+        primary = call_gemini(prompt, model_id, gemini_key)
+        if primary.startswith("⚠️") and openai_key:
+            return "_Gemini provider failed, so MechAI used OpenAI backup._\n\n" + call_openai(prompt, "gpt-4o-mini", openai_key)
+        return primary
+    primary = call_openai(prompt, model_id, openai_key)
+    if primary.startswith("⚠️") and gemini_key:
+        return "_OpenAI provider failed, so MechAI used Gemini backup._\n\n" + call_gemini(prompt, "gemini-2.5-flash-lite", gemini_key)
+    return primary
 
-# ----------------------------- Sidebar -----------------------------
+# -----------------------------------------------------------------------------
+# Sidebar
+# -----------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown("""<div class='sidebar-card'><div class='sidebar-title'>⚙️ MechAI Pro</div><div class='sidebar-sub'>Premium mechanical engineering copilot. Chat-first. Project-aware. Agent-routed.</div></div>""", unsafe_allow_html=True)
-    lang = st.selectbox("Interface / الواجهة", ["English", "العربية"], index=0 if st.session_state.lang=="English" else 1)
+    st.markdown("""
+    <div class="sidebar-card">
+      <h2>⚙️ MechAI Pro</h2>
+      <p>Premium mechanical engineering copilot.<br>Chat-first. Project-aware. Agent-routed.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    lang = st.selectbox("Interface / الواجهة", ["English", "العربية"], index=0 if st.session_state.lang=="English" else 1, label_visibility="visible")
     st.session_state.lang = lang
-    tr = T[lang]
-    view = st.radio(tr["nav"], [tr["chat"], tr["about"]], horizontal=True)
-    openai_key = get_openai_key()
-    gemini_key = get_gemini_key()
-    provider = st.selectbox(tr.get("provider", "AI Provider"), ["OpenAI / ChatGPT", "Gemini backup"], index=0)
-    provider_key = openai_key if normalize_provider(provider) == "openai" else gemini_key
-    if provider_key:
-        st.markdown(f"<div class='status-ok'>● {provider.split()[0]} connected</div>", unsafe_allow_html=True)
+    tr = TEXT[lang]
+
+    view = st.radio("View", ["Chat", "About"], horizontal=True, index=0 if st.session_state.view=="Chat" else 1)
+    st.session_state.view = view
+
+    provider = st.selectbox("AI Provider", ["OpenAI / ChatGPT", "Gemini backup"], index=0 if "OpenAI" in st.session_state.provider else 1)
+    st.session_state.provider = provider
+    openai_key = get_openai_key(); gemini_key = get_gemini_key()
+    if "OpenAI" in provider:
+        st.markdown(f"<div class='{ 'status-ok' if openai_key else 'status-warn'}'>● OpenAI {tr['connected'] if openai_key else tr['missing']}</div>", unsafe_allow_html=True)
+        model_id = st.text_input("Model", value="gpt-4o-mini", label_visibility="visible")
     else:
-        missing = "OPENAI_API_KEY" if normalize_provider(provider) == "openai" else "GEMINI_API_KEY"
-        st.markdown(f"<div class='status-bad'>● {missing} missing</div>", unsafe_allow_html=True)
-    default_model = "gpt-4o-mini" if normalize_provider(provider) == "openai" else "gemini-2.5-flash-lite"
-    model_id = st.text_input(tr["model"], value=default_model)
+        st.markdown(f"<div class='{ 'status-ok' if gemini_key else 'status-warn'}'>● Gemini {tr['connected'] if gemini_key else tr['missing']}</div>", unsafe_allow_html=True)
+        model_id = st.text_input("Model", value="gemini-2.5-flash-lite", label_visibility="visible")
+
     st.divider()
-    st.caption(tr["projects"])
+    st.caption("Projects")
     projects = list_projects()
-    selected = st.selectbox("", projects, index=projects.index(st.session_state.project) if st.session_state.project in projects else 0, label_visibility="collapsed")
+    selected = st.selectbox("Project", projects, index=projects.index(st.session_state.project) if st.session_state.project in projects else 0, label_visibility="collapsed")
     if selected != st.session_state.project:
         st.session_state.project = selected
         st.session_state.messages = load_chat(selected)
         st.rerun()
-    c1,c2 = st.columns(2)
+
+    c1, c2 = st.columns(2)
     with c1:
-        if st.button(tr["new_project"], use_container_width=True):
-            name = "Project_" + datetime.now().strftime("%Y%m%d_%H%M")
-            if not LOCAL_SAVE_ENABLED:
-                st.session_state.project_names = list(dict.fromkeys(st.session_state.project_names + [name]))
-            ensure_project(name); st.session_state.project=name; st.session_state.messages=[]; st.rerun()
+        if st.button(tr["new"], use_container_width=True):
+            new_name = f"Project_{datetime.now().strftime('%H%M')}"
+            if LOCAL_SAVE_ENABLED:
+                ensure_project(new_name)
+            else:
+                st.session_state.project_names.append(new_name)
+            st.session_state.project = new_name
+            st.session_state.messages = []
+            st.rerun()
     with c2:
         if st.button(tr["clear"], use_container_width=True):
-            clear_chat(st.session_state.project); st.rerun()
-    if not LOCAL_SAVE_ENABLED:
-        st.caption("🔒 " + tr["session"])
-    else:
-        st.caption("💾 Local save enabled for private/local install.")
-    st.divider()
-    st.caption("Agent Brain")
-    for k,(n,d) in AGENTS.items():
-        active = "border-color:#6EE7F9;" if k == st.session_state.last_agent else ""
-        st.markdown(f"<div class='agent-chip' style='{active}'><div class='name'>{n}</div><div class='desc'>{d}</div></div>", unsafe_allow_html=True)
-    st.divider()
-    with st.expander("📚 Knowledge Vault", expanded=False):
-        files = st.file_uploader("Upload PDFs", type=["pdf"], accept_multiple_files=True)
-        if files and st.button("Index uploaded PDFs", use_container_width=True):
-            all_chunks=[]
-            for f in files:
+            st.session_state.messages = []
+            save_chat(st.session_state.project, [])
+            st.rerun()
+
+    st.caption("🔒 " + tr["session"])
+
+    with st.expander("Knowledge Vault", expanded=False):
+        pdfs = st.file_uploader("Upload PDF references", type=["pdf"], accept_multiple_files=True, label_visibility="visible")
+        if pdfs:
+            chunks=[]
+            for f in pdfs:
                 text = extract_pdf_text(f)
-                all_chunks.extend(chunk_text(text))
-            st.session_state.kb_chunks = all_chunks
-            st.success(f"Indexed {len(all_chunks)} chunks")
-    with st.expander("🖼️ Vision input", expanded=False):
-        st.file_uploader("Attach image", type=["png","jpg","jpeg"], key="vision_file")
-    with st.expander("🎙️ Voice input", expanded=False):
-        st.audio_input("Record voice", key="voice_file")
+                chunks.extend(chunk_text(text))
+            st.session_state.kb_chunks = chunks
+            st.success(f"Indexed {len(chunks)} chunks for this session.")
 
-tr = T[st.session_state.lang]
+    with st.expander("System Health", expanded=False):
+        st.write(f"Provider: `{provider}`")
+        st.write(f"Project: `{st.session_state.project}`")
+        st.write(f"Agent: `{AGENTS.get(st.session_state.last_agent, AGENTS['chief'])[0]}`")
+        st.write(f"Knowledge chunks: `{len(st.session_state.kb_chunks)}`")
 
-# ----------------------------- Main layout -----------------------------
+tr = TEXT[st.session_state.lang]
+openai_key = get_openai_key(); gemini_key = get_gemini_key()
+
+# -----------------------------------------------------------------------------
+# Main UI
+# -----------------------------------------------------------------------------
+agent_name = AGENTS.get(st.session_state.last_agent, AGENTS["chief"])[0]
+provider_badge = "AI OpenAI" if "OpenAI" in st.session_state.provider else "AI Gemini"
+
 st.markdown(f"""
-<div class='hero-mini'>
-  <div class='brand'>
-    <div class='logo'>⚙</div>
-    <div><h1>MechAI Pro</h1><p>{tr['tagline']}</p></div>
-  </div>
-  <div class='pillrow'>
-    <div class='pill'>📁 {st.session_state.project}</div>
-    <div class='pill'>🤖 {AGENTS[st.session_state.last_agent][0]}</div>
-    <div class='pill'>AI {provider.split()[0]}</div>
-    <div class='pill'>📚 {len(st.session_state.kb_chunks)} chunks</div>
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brandbox">
+      <div class="logo-orb">⚙️</div>
+      <div><h1>MechAI Pro</h1><p>Mechanical intelligence workspace for R&D, CAD, simulation, CFD, DFM and invention.</p></div>
+    </div>
+    <div class="badges">
+      <div class="badge">📁 {st.session_state.project}</div>
+      <div class="badge">{agent_name}</div>
+      <div class="badge">{provider_badge}</div>
+      <div class="badge">📚 {len(st.session_state.kb_chunks)} chunks</div>
+    </div>
   </div>
 </div>
+<div class="notice">{tr['notice']}</div>
 """, unsafe_allow_html=True)
 
-st.markdown(f"<div class='demo-warning'>⚠️ <b>Demo notice:</b> MechAI Pro is an engineering copilot prototype. It does not replace professional engineering verification, certified calculations, CAD/FEA/CFD validation, code compliance, or safety review. Public version is session-only; do not upload confidential files.</div>", unsafe_allow_html=True)
-
-if view == tr["about"]:
-    st.markdown("""
-    <div class='about-card'>
-      <h3>About MechAI Pro</h3>
-      <p><b>MechAI Pro</b> is a public MVP of a mechanical engineering AI workspace for product R&D, CAD automation, FEA/CFD planning, DFM/DFA, material reasoning, and invention support.</p>
-      <p>This hosted version is designed as a demo. It routes engineering questions to specialist agents and can use uploaded references during the current session. The AI engine can use OpenAI/ChatGPT models as the primary provider and Gemini as an optional backup.</p>
-    </div>
-    <div class='about-card'>
-      <h3>Important engineering limitation</h3>
+if st.session_state.view == "About":
+    st.markdown(f"""
+    <div class="about-card">
+      <h2>{tr['about_title']}</h2>
+      <p>{tr['about']}</p>
+      <h3>What this version does</h3>
       <ul>
-        <li>Outputs are engineering guidance, not certified calculations.</li>
-        <li>Do not rely on it alone for safety-critical design, regulatory compliance, pressure systems, lifting systems, medical devices, or production release.</li>
-        <li>Always verify results using accepted engineering standards, qualified review, physical testing, and validated CAD/FEA/CFD workflows.</li>
-        <li>Do not upload confidential drawings, customer data, proprietary designs, or sensitive files to this public demo.</li>
+        <li>Routes engineering prompts to specialist agents.</li>
+        <li>Uses OpenAI/ChatGPT as primary provider, with Gemini as optional backup.</li>
+        <li>Indexes uploaded PDF references for the current session only.</li>
+        <li>Provides safe preliminary reasoning, not certified engineering approval.</li>
       </ul>
     </div>
     """, unsafe_allow_html=True)
-    st.markdown("<div class='app-footer'>MechAI Pro · Public Demo · Mechanical Engineering AI Copilot</div>", unsafe_allow_html=True)
-    st.stop()
-
-# Chat-first layout: no right panel before the first message.
-if not st.session_state.messages:
-    st.markdown(f"""
-    <div class='chat-welcome'>
-      <h2>{tr['welcome']}</h2>
-      <p>{tr['welcome_sub']}</p>
-    </div>
-    """, unsafe_allow_html=True)
-    with st.expander("⌘ Prompt Library / مكتبة الأوامر", expanded=False):
+else:
+    if not st.session_state.messages:
         st.markdown(f"""
-        <div class='quick-grid'>
-          <div class='quick-card'><b>🔧 Design Review</b><span>Analyze failure modes, mechanism risks, material choices, and validation plan.</span></div>
-          <div class='quick-card'><b>📊 FEA Setup</b><span>Build an ANSYS/SolidWorks Simulation plan with loads, mesh, and convergence checks.</span></div>
-          <div class='quick-card'><b>🌊 CFD/Thermal</b><span>Create domain, mesh, y+, turbulence model, and validation strategy.</span></div>
-          <div class='quick-card'><b>🏭 DFM Cost-down</b><span>Review manufacturability, assembly risk, tolerances, and cost-reduction options.</span></div>
+        <div class="hero">
+          <div class="hero-kicker">AI Mechanical Engineering OS</div>
+          <h2>{tr['title']}</h2>
+          <p>{tr['subtitle']}</p>
+          <div class="quick-grid">
+            <div class="quick-chip"><b>🔧 Design Review</b><span>Failure modes, loads, materials and validation.</span></div>
+            <div class="quick-chip"><b>📊 FEA Plan</b><span>Loads, fixtures, mesh and convergence strategy.</span></div>
+            <div class="quick-chip"><b>🌊 CFD / Thermal</b><span>Flow domain, y+, turbulence and heat transfer.</span></div>
+            <div class="quick-chip"><b>🏭 DFM / Cost-down</b><span>Manufacturability, assembly risk and process choice.</span></div>
+          </div>
         </div>
         """, unsafe_allow_html=True)
-else:
-    main, right = st.columns([0.76, 0.24], gap="large")
-    with main:
+        with st.expander(tr["prompt_lib"], expanded=False):
+            prompts = [
+                "Create a short DFM review for an injection molded plastic cover.",
+                "Build an ANSYS static structural simulation plan for a bracket loaded by 2 kN.",
+                "Generate a SolidWorks VBA macro to export all sheet metal flat patterns to DXF.",
+                "Calculate Reynolds number and pressure drop for water flow in a pipe.",
+            ]
+            for p in prompts:
+                if st.button(p, use_container_width=True):
+                    st.session_state.pending_prompt = p
+                    st.rerun()
+    else:
+        st.markdown(f"""
+        <div class="info-strip">
+          <div class="info-card"><small>Routed Agent</small><b>{agent_name}</b></div>
+          <div class="info-card"><small>Provider</small><b>{provider_badge}</b></div>
+          <div class="info-card"><small>Knowledge</small><b>{len(st.session_state.kb_chunks)} session chunks</b></div>
+        </div>
+        """, unsafe_allow_html=True)
+        with st.expander("Engineering Context", expanded=False):
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.markdown("**Reference Brain**")
+                for r in REFERENCE_BRAIN.get(st.session_state.last_agent, REFERENCE_BRAIN["mechanical"]):
+                    st.write("• " + r)
+            with col_b:
+                st.markdown("**Available tool logic**")
+                st.write("• Beam / shaft sanity checks")
+                st.write("• Reynolds / pressure-drop equations")
+                st.write("• FEA / CFD setup guidance")
+                st.write("• DFM/DFA review structure")
+
         for m in st.session_state.messages:
-            with st.chat_message(m.get("role","assistant")):
-                st.markdown(m.get("content",""))
-    with right:
-        st.markdown("<div class='right-panel'>", unsafe_allow_html=True)
-        st.markdown(f"### {tr['right']}")
-        st.markdown(f"<div class='kv'><span>{tr['project']}</span><span>{st.session_state.project}</span></div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='kv'><span>{tr['agent']}</span><span>{AGENTS[st.session_state.last_agent][0]}</span></div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='kv'><span>Knowledge</span><span>{len(st.session_state.kb_chunks)} chunks</span></div>", unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
-        with st.expander(f"📚 {tr['refs']}", expanded=False):
-            refs = REFERENCE_BRAIN.get(st.session_state.last_agent, REFERENCE_BRAIN['mechanical'])[:6]
-            for r in refs:
-                st.markdown(f"<div class='toolbox'><div class='toolbox-title'>📘 {r}</div><div class='toolbox-text'>Methodology guidance. Upload legal PDFs for exact RAG citations.</div></div>", unsafe_allow_html=True)
-        with st.expander(f"🛠️ {tr['tools']}", expanded=True):
-            for title, desc in [("Beam / Shaft", "Fast sizing equations and sanity checks."),("FEA / CFD Wizard", "Setup plans, assumptions, mesh strategy."),("DFM / Cost", "Manufacturing risks and cost-down logic.")]:
-                st.markdown(f"<div class='toolbox'><div class='toolbox-title'>🛠️ {title}</div><div class='toolbox-text'>{desc}</div></div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+            role = m.get("role", "assistant")
+            content = m.get("content", "")
+            a = m.get("agent", "chief")
+            if role == "user":
+                st.markdown(f"""
+                <div class="message-row">
+                  <div class="avatar user">☻</div>
+                  <div class="bubble user">{content}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                label = AGENTS.get(a, AGENTS["chief"])[0]
+                st.markdown(f"""
+                <div class="message-row">
+                  <div class="avatar ai">⚙️</div>
+                  <div class="bubble ai"><div class="agent-tag">{label}</div>
+                """, unsafe_allow_html=True)
+                st.markdown(content)
+                st.markdown("</div></div>", unsafe_allow_html=True)
 
-# ----------------------------- Chat input -----------------------------
-if not (openai_key if normalize_provider(provider) == "openai" else gemini_key):
-    st.warning(tr["no_key"])
+    st.markdown(f"<div class='footer-line'>{tr['footer']}</div>", unsafe_allow_html=True)
 
-user_prompt = st.chat_input(tr["input"])
+# -----------------------------------------------------------------------------
+# Chat input and execution
+# -----------------------------------------------------------------------------
+pending = st.session_state.pop("pending_prompt", None) if "pending_prompt" in st.session_state else None
+user_prompt = pending or st.chat_input(tr["input"])
+
 if user_prompt:
     agent = route_agent(user_prompt)
     st.session_state.last_agent = agent
-    st.session_state.messages.append({"role":"user", "content":user_prompt, "time":datetime.now().isoformat(), "agent":agent})
-    retrieved = retrieve_chunks(user_prompt, st.session_state.kb_chunks, k=4)
+    retrieved = retrieve_chunks(user_prompt, st.session_state.kb_chunks)
     prompt = build_prompt(user_prompt, agent, retrieved)
-    answer = call_llm(prompt, provider, model_id, openai_key, gemini_key)
+    st.session_state.messages.append({"role":"user", "content":user_prompt, "time":datetime.now().isoformat(), "agent":agent})
+    with st.spinner("MechAI is engineering the response…"):
+        answer = call_llm(prompt, st.session_state.provider, model_id, openai_key, gemini_key)
     st.session_state.messages.append({"role":"assistant", "content":answer, "time":datetime.now().isoformat(), "agent":agent})
     save_chat(st.session_state.project, st.session_state.messages)
     st.rerun()
 
-
-st.markdown("<div class='app-footer'>MechAI Pro · Public Demo · Mechanical Engineering AI Copilot · Verify all outputs before engineering use</div>", unsafe_allow_html=True)
+st.markdown("<div class='composer-note'>MechAI Pro is a demo copilot. Verify calculations, CAD scripts and simulation assumptions before engineering use.</div>", unsafe_allow_html=True)

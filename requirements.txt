@@ -2,4 +2,3 @@ streamlit
 openai
 google-genai
 PyPDF2
-Pillow
