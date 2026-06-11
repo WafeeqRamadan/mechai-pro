@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-MechAI Pro v16 — Fixed Sidebar Minimal UI
-ChatGPT-like minimal interface with an always-visible fixed sidebar and workspace selector.
+MechAI Pro v17 — Knowledge-First Engine
+Minimal fixed-sidebar UI with internal workspace knowledge packs as the primary reference.
+OpenAI/Gemini remain optional assistance, not the source of truth.
 Run: streamlit run app.py
 """
 import os, json, re, math, html
@@ -25,6 +26,19 @@ try:
     import PyPDF2
 except Exception:
     PyPDF2 = None
+
+try:
+    from knowledge_engine_v17 import (
+        retrieve_knowledge,
+        format_knowledge_context,
+        compose_internal_answer,
+        load_knowledge_documents,
+    )
+except Exception:
+    retrieve_knowledge = None
+    format_knowledge_context = None
+    compose_internal_answer = None
+    load_knowledge_documents = None
 
 APP_DIR = Path(__file__).parent
 PROJECTS_DIR = APP_DIR / "projects"
@@ -198,6 +212,17 @@ WORKSPACES = {
     "patent": "💡 Innovation / Patent",
 }
 
+WORKSPACE_TO_KNOWLEDGE_LABEL = {
+    "chief": "General engineering",
+    "mechanical": "Product R&D / Design",
+    "solidworks": "CAD / SolidWorks",
+    "fea": "Simulation / FEA",
+    "cfd": "CFD / Thermal",
+    "manufacturing": "Manufacturing / DFM",
+    "materials": "Materials selection",
+    "patent": "Innovation / Patent",
+}
+
 WORKSPACE_AGENT_HINT = {
     "chief": "Use automatic routing from the user's question.",
     "mechanical": "Bias the answer toward product R&D, mechanisms, sizing, GD&T, and mechanical design decisions.",
@@ -288,6 +313,8 @@ if "last_agent" not in st.session_state: st.session_state.last_agent = "chief"
 if "kb_chunks" not in st.session_state: st.session_state.kb_chunks = []
 if "view" not in st.session_state: st.session_state.view = "Chat"
 if "provider" not in st.session_state: st.session_state.provider = "OpenAI / ChatGPT"
+if "answer_mode" not in st.session_state: st.session_state.answer_mode = "Internal Knowledge Only"
+if "last_sources" not in st.session_state: st.session_state.last_sources = []
 if "workspace" not in st.session_state: st.session_state.workspace = "chief"
 
 # -----------------------------------------------------------------------------
@@ -350,20 +377,60 @@ def local_tool_hint(prompt: str) -> str:
         return "Tool available: circular shaft torsion: tau=16T/(πd³), angle=T*L/(J*G), J=πd⁴/32."
     return ""
 
-def build_prompt(user_prompt: str, agent: str, retrieved: List[str]) -> str:
+def knowledge_workspace_label() -> str:
+    return WORKSPACE_TO_KNOWLEDGE_LABEL.get(st.session_state.get("workspace", "chief"), "General engineering")
+
+
+def retrieve_internal_sources(user_prompt: str, top_k: int = 4):
+    if retrieve_knowledge is None:
+        return []
+    try:
+        return retrieve_knowledge(user_prompt, workspace=knowledge_workspace_label(), top_k=top_k)
+    except Exception:
+        return []
+
+
+def internal_answer(user_prompt: str, hits) -> str:
+    if compose_internal_answer is None:
+        return "Internal knowledge engine is not available. Make sure `knowledge_engine_v17.py` exists next to `app.py`."
+    try:
+        return compose_internal_answer(user_prompt, workspace=knowledge_workspace_label(), hits=hits)
+    except Exception as e:
+        return f"Internal knowledge engine error: {e}"
+
+
+def internal_context_from_hits(hits) -> str:
+    if format_knowledge_context is None:
+        return "Internal knowledge formatter is not available."
+    try:
+        return format_knowledge_context(hits)
+    except Exception:
+        return "No internal knowledge context could be formatted."
+
+
+def build_prompt(user_prompt: str, agent: str, retrieved: List[str], internal_context: str = "") -> str:
     refs = REFERENCE_BRAIN.get(agent, []) + REFERENCE_BRAIN.get("mechanical", [])[:2]
-    ref_txt = "\n".join([f"- {r}" for r in refs])
-    rag_txt = "\n\n".join([f"[PROJECT_REF_{i+1}]\n{c}" for i,c in enumerate(retrieved)])
+    ref_txt = "\\n".join([f"- {r}" for r in refs])
+    rag_txt = "\\n\\n".join([f"[PROJECT_REF_{i+1}]\\n{c}" for i, c in enumerate(retrieved)])
     tool = local_tool_hint(user_prompt)
     agent_name, agent_desc = AGENTS[agent]
     return f"""{SYSTEM_BASE}
 Current specialist: {agent_name} — {agent_desc}
 Selected workspace: {WORKSPACES.get(st.session_state.get("workspace", "chief"), "General engineering")}
 Workspace guidance: {WORKSPACE_AGENT_HINT.get(st.session_state.get("workspace", "chief"), "Use automatic routing.")}
+
+PRIMARY SOURCE OF TRUTH — Internal MechAI Knowledge Packs:
+{internal_context if internal_context else 'No internal knowledge pack source was retrieved.'}
+
+Rules for using sources:
+- Treat internal knowledge packs and uploaded references as the primary basis.
+- OpenAI/Gemini may polish, organize, or reason over retrieved internal context, but must not invent unsupported engineering facts.
+- If source evidence is weak, say what input or reference is missing.
+
 Reference brain to emulate as methodology, not copyrighted text:
 {ref_txt}
 
-Project retrieved context:
+Project uploaded reference context:
 {rag_txt if rag_txt else 'No uploaded project reference matched this question.'}
 
 Local engineering tool hint:
@@ -489,9 +556,20 @@ with st.sidebar:
     with st.expander("Settings", expanded=False):
         lang = st.selectbox("Interface / الواجهة", ["English", "العربية"], index=0 if st.session_state.lang=="English" else 1)
         st.session_state.lang = lang
-        provider = st.selectbox("AI", ["OpenAI / ChatGPT", "Gemini backup"], index=0 if "OpenAI" in st.session_state.provider else 1)
+        answer_mode = st.selectbox(
+            "Answer mode",
+            ["Internal Knowledge Only", "Internal Knowledge + Optional AI polish", "External AI only"],
+            index=["Internal Knowledge Only", "Internal Knowledge + Optional AI polish", "External AI only"].index(st.session_state.answer_mode) if st.session_state.answer_mode in ["Internal Knowledge Only", "Internal Knowledge + Optional AI polish", "External AI only"] else 0,
+        )
+        st.session_state.answer_mode = answer_mode
+        provider = st.selectbox("Optional external AI", ["OpenAI / ChatGPT", "Gemini backup"], index=0 if "OpenAI" in st.session_state.provider else 1)
         st.session_state.provider = provider
         openai_key = get_openai_key(); gemini_key = get_gemini_key()
+        try:
+            doc_count = len(load_knowledge_documents("knowledge_packs")) if load_knowledge_documents else 0
+        except Exception:
+            doc_count = 0
+        st.caption(f"Internal knowledge chunks: {doc_count}")
         if "OpenAI" in provider:
             st.markdown(f"<div class='{ 'status-ok' if openai_key else 'status-warn'}'>● OpenAI {TEXT[st.session_state.lang]['connected'] if openai_key else TEXT[st.session_state.lang]['missing']}</div>", unsafe_allow_html=True)
             model_id = st.text_input("Model", value="gpt-4o-mini")
@@ -512,7 +590,7 @@ with st.sidebar:
 tr = TEXT[st.session_state.lang]
 openai_key = get_openai_key(); gemini_key = get_gemini_key()
 agent_name = AGENTS.get(st.session_state.last_agent, AGENTS["chief"])[0]
-provider_badge = "OpenAI" if "OpenAI" in st.session_state.provider else "Gemini"
+provider_badge = "Internal Knowledge" if st.session_state.answer_mode == "Internal Knowledge Only" else ("Knowledge + OpenAI" if "OpenAI" in st.session_state.provider else "Knowledge + Gemini")
 
 # -----------------------------------------------------------------------------
 # Main UI — minimal ChatGPT-style center
@@ -569,10 +647,24 @@ if user_prompt:
     agent = route_agent(user_prompt)
     st.session_state.last_agent = agent
     retrieved = retrieve_chunks(user_prompt, st.session_state.kb_chunks)
-    prompt = build_prompt(user_prompt, agent, retrieved)
+    internal_hits = retrieve_internal_sources(user_prompt, top_k=4)
+    st.session_state.last_sources = [getattr(h, "path", "") for h in internal_hits]
+    internal_context = internal_context_from_hits(internal_hits)
     st.session_state.messages.append({"role":"user", "content":user_prompt, "time":datetime.now().isoformat(), "agent":agent})
-    with st.spinner("Thinking…"):
-        answer = call_llm(prompt, st.session_state.provider, model_id, openai_key, gemini_key)
+    with st.spinner("Searching internal engineering knowledge…"):
+        if st.session_state.answer_mode == "External AI only":
+            prompt = build_prompt(user_prompt, agent, retrieved, internal_context="External AI only mode selected. Internal sources were not enforced.")
+            answer = call_llm(prompt, st.session_state.provider, model_id, openai_key, gemini_key)
+        elif st.session_state.answer_mode == "Internal Knowledge + Optional AI polish":
+            prompt = build_prompt(user_prompt, agent, retrieved, internal_context=internal_context)
+            has_selected_ai = ("OpenAI" in st.session_state.provider and openai_key) or ("Gemini" in st.session_state.provider and gemini_key)
+            if has_selected_ai:
+                answer = call_llm(prompt, st.session_state.provider, model_id, openai_key, gemini_key)
+                answer = "_Based first on MechAI internal knowledge packs; external AI used only to organize/polish the answer._\\n\\n" + answer
+            else:
+                answer = internal_answer(user_prompt, internal_hits)
+        else:
+            answer = internal_answer(user_prompt, internal_hits)
     st.session_state.messages.append({"role":"assistant", "content":answer, "time":datetime.now().isoformat(), "agent":agent})
     save_chat(st.session_state.project, st.session_state.messages)
     st.rerun()
