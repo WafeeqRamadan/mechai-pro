@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-MechAI Pro v11 — ChatGPT-style Quiet UI
-Minimal black ChatGPT-like interface for MechAI Pro.
+MechAI Pro v12 — ChatGPT Exact Minimal UI
+Near-ChatGPT black minimal interface for MechAI Pro.
 Run: streamlit run app.py
 """
 import os, json, re, math, html
@@ -40,111 +40,57 @@ st.set_page_config(
 )
 
 # -----------------------------------------------------------------------------
-# CSS — ChatGPT-style quiet black UI
+# CSS — near-ChatGPT exact minimal black UI
 # -----------------------------------------------------------------------------
 st.markdown(r"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 :root{
-  --bg:#000000;
-  --sidebar:#050505;
-  --sidebar2:#090909;
-  --surface:#111111;
-  --surface2:#1f1f1f;
-  --input:#2b2b2b;
-  --input-border:#3a3a3a;
-  --text:#f5f5f5;
-  --muted:#b4b4b4;
-  --faint:#777777;
-  --line:#242424;
-  --hover:#2f2f2f;
-  --green:#22c55e;
-  --amber:#fbbf24;
-  --red:#ff4a4a;
+  --bg:#000000;--sidebar:#050505;--surface:#212121;--surface2:#2f2f2f;--hover:#2a2a2a;
+  --text:#f4f4f4;--muted:#b4b4b4;--faint:#858585;--line:#242424;--green:#22c55e;--amber:#fbbf24;
 }
-html, body, [class*="css"]{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;}
-.stApp{background:var(--bg); color:var(--text);}
-#MainMenu, footer, header{visibility:hidden; height:0;}
-.block-container{max-width:980px; padding:2.2rem 2rem 7.5rem;}
-[data-testid="stSidebar"]{
-  background:var(--sidebar);
-  border-right:1px solid var(--line);
-}
+html,body,[class*="css"]{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;}
+.stApp{background:#000;color:var(--text);}
+#MainMenu, footer, header{visibility:hidden;height:0;}
+.block-container{max-width:980px;padding:0 2rem 7.5rem;}
+[data-testid="stSidebar"]{background:#050505;border-right:1px solid #1f1f1f;min-width:270px!important;max-width:270px!important;}
 [data-testid="stSidebar"] *{color:var(--text);} 
-[data-testid="stSidebar"] section{padding-top:.6rem!important;}
-[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p{color:var(--muted);}
-.sidebar-brand{padding:12px 10px 16px; margin-bottom:10px;}
-.sidebar-brand h2{margin:0; font-size:20px; font-weight:700; letter-spacing:-.04em;}
-.sidebar-brand p{font-size:12px; line-height:1.55; color:var(--muted); margin:9px 0 0;}
-[data-testid="stSidebar"] .stButton button{
-  width:100%; height:42px; border-radius:12px; border:1px solid var(--line); background:var(--surface2); color:var(--text); font-weight:600;
-}
-[data-testid="stSidebar"] .stButton button:hover{background:var(--hover); border-color:#3d3d3d;}
-[data-testid="stSidebar"] .stRadio > label,
-[data-testid="stSidebar"] .stSelectbox > label,
-[data-testid="stSidebar"] .stTextInput > label{color:var(--muted)!important; font-size:12px!important; font-weight:650!important;}
-[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
-[data-testid="stTextInput"] input{
-  background:#111!important; border:1px solid var(--line)!important; border-radius:12px!important; color:var(--text)!important; min-height:42px;
-}
-[data-testid="stExpander"]{
-  background:transparent!important; border:1px solid var(--line)!important; border-radius:12px!important; overflow:hidden;
-}
-.status-ok{color:var(--green); font-weight:700; font-size:13px; margin:10px 0;}
-.status-warn{color:var(--amber); font-weight:700; font-size:13px; margin:10px 0;}
-.chat-topbar{position:fixed; top:0; left:0; right:0; height:0; pointer-events:none;}
-.landing{
-  min-height:58vh;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  text-align:center;
-}
-.landing h1{font-size:28px; line-height:1.2; font-weight:500; letter-spacing:-.02em; margin:0 0 34px; color:#f4f4f4;}
-.quick-row{display:flex; gap:8px; flex-wrap:wrap; justify-content:center; max-width:760px; margin-top:6px;}
-.quick-pill{border:1px solid var(--line); background:#111; color:#d6d6d6; border-radius:999px; padding:9px 13px; font-size:12px; font-weight:500;}
-.top-status{
-  display:flex; justify-content:flex-end; gap:8px; margin-bottom:14px; align-items:center;
-}
-.mini-badge{border:1px solid var(--line); background:#0b0b0b; border-radius:999px; padding:7px 10px; color:var(--muted); font-size:12px; white-space:nowrap;}
-.notice-mini{color:#8d8d8d; font-size:12px; text-align:center; margin-top:22px;}
-.message-row{display:flex; gap:14px; margin:25px 0; align-items:flex-start;}
-.avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:15px;flex:0 0 auto;}
-.avatar.user{background:#ef4444;color:#fff;}
-.avatar.ai{background:#202020;color:#f1f1f1;border:1px solid #333;}
-.bubble{max-width:820px; line-height:1.72; font-size:15px; color:#f3f3f3;}
-.bubble.user{padding-top:5px; font-weight:500;}
-.bubble.ai{padding-top:2px;}
-.agent-tag{display:inline-flex; align-items:center; gap:6px; color:#9e9e9e; font-size:12px; margin-bottom:8px;}
-.thin-divider{height:1px; background:var(--line); margin:20px 0;}
-.about-card{border:1px solid var(--line);background:#080808;border-radius:16px;padding:24px;line-height:1.75;max-width:820px;margin:60px auto 0;}
-.about-card h2{font-size:26px; margin-top:0;}
-.footer-line{color:#6f6f6f; text-align:center; font-size:11px; margin:24px 0 4px;}
-[data-testid="stChatInput"]{
-  background:linear-gradient(180deg,rgba(0,0,0,0),#000 23%);
-  padding-bottom:22px;
-}
-[data-testid="stChatInput"] textarea{
-  border-radius:999px !important;
-  border:1px solid var(--input-border) !important;
-  background:var(--input) !important;
-  color:#fff !important;
-  min-height:56px !important;
-  box-shadow:none !important;
-  padding-left:18px!important;
-}
-[data-testid="stChatInput"] button{background:#f4f4f4!important; color:#000!important; border-radius:999px!important;}
-.stMarkdown a{color:#d1d5db;}
-button[kind="secondary"]{border-radius:12px !important;}
-@media (max-width: 900px){
-  .block-container{padding:1rem .9rem 7rem; max-width:100%;}
-  .landing{min-height:55vh;}
-  .landing h1{font-size:24px; margin-bottom:24px;}
-  .top-status{display:none;}
-  .quick-row{display:none;}
-  .message-row{gap:10px; margin:20px 0;}
-  .bubble{font-size:14px; max-width:100%;}
+[data-testid="stSidebar"] section{padding-top:.4rem!important;}
+.sidebar-title{font-size:20px;font-weight:700;margin:8px 0 18px;color:#fff;}
+.nav-btn{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;color:#f4f4f4;font-size:14px;margin:2px 0;}
+.nav-btn.active{background:#2f2f2f;}
+.nav-btn:hover{background:#202020;}
+.side-label{color:#8f8f8f;font-weight:700;font-size:12px;margin:22px 0 8px;}
+.project-item{display:flex;gap:10px;align-items:center;color:#f4f4f4;font-size:14px;padding:8px 12px;border-radius:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.project-item:hover{background:#202020;}
+.user-chip{position:fixed;bottom:14px;left:12px;width:246px;border-top:1px solid #202020;padding-top:10px;color:#dcdcdc;font-size:13px;}
+[data-testid="stSidebar"] .stButton button{width:100%;height:40px;border-radius:10px;border:0;background:#2f2f2f;color:#fff;font-weight:500;text-align:left;}
+[data-testid="stSidebar"] .stButton button:hover{background:#3a3a3a;}
+[data-testid="stSidebar"] .stRadio > label,[data-testid="stSidebar"] .stSelectbox > label,[data-testid="stSidebar"] .stTextInput > label{color:#8f8f8f!important;font-size:12px!important;font-weight:650!important;}
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div,[data-testid="stTextInput"] input{background:#111!important;border:1px solid #242424!important;border-radius:10px!important;color:#fff!important;min-height:40px;}
+[data-testid="stExpander"]{background:#080808!important;border:1px solid #222!important;border-radius:10px!important;overflow:hidden;}
+.status-ok{color:var(--green);font-weight:650;font-size:12px;margin:8px 0;}.status-warn{color:var(--amber);font-weight:650;font-size:12px;margin:8px 0;}
+.landing{min-height:72vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
+.landing h1{font-size:24px;line-height:1.25;font-weight:400;letter-spacing:-.015em;margin:0 0 36px;color:#f4f4f4;}
+.message-row{display:flex;gap:16px;margin:26px auto;align-items:flex-start;max-width:820px;}
+.avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:14px;flex:0 0 auto;}
+.avatar.user{background:#7c3aed;color:#fff;}.avatar.ai{background:#1f1f1f;color:#f1f1f1;border:1px solid #333;}
+.bubble{max-width:760px;line-height:1.75;font-size:15px;color:#f3f3f3;}.bubble.user{padding-top:5px;font-weight:500;}.bubble.ai{padding-top:2px;}
+.agent-tag{display:inline-flex;color:#888;font-size:12px;margin-bottom:8px;}
+.about-card{background:transparent;border:0;padding:24px;line-height:1.75;max-width:760px;margin:90px auto 0;color:#e8e8e8;}.about-card h2{font-size:26px;margin-top:0;font-weight:500;}
+.footer-line{display:none;}
+[data-testid="stChatInput"]{background:linear-gradient(180deg,rgba(0,0,0,0),#000 24%);padding-bottom:24px;}
+[data-testid="stChatInput"] > div{max-width:840px;margin:0 auto;}
+[data-testid="stChatInput"] textarea{border-radius:28px!important;border:1px solid #3a3a3a!important;background:#212121!important;color:#fff!important;min-height:56px!important;box-shadow:none!important;padding-left:18px!important;}
+[data-testid="stChatInput"] button{background:#f4f4f4!important;color:#000!important;border-radius:999px!important;}
+.notice-slim{position:fixed;right:18px;bottom:10px;color:#6f6f6f;font-size:11px;z-index:999;}
+.stMarkdown a{color:#d1d5db;}button[kind="secondary"]{border-radius:10px!important;}
+@media(max-width:900px){
+  [data-testid="stSidebar"]{min-width:230px!important;max-width:230px!important;}
+  .block-container{padding:0 .9rem 7rem;max-width:100%;}
+  .landing{min-height:68vh;}.landing h1{font-size:22px;margin-bottom:28px;}
+  .message-row{gap:10px;margin:20px 0;}.bubble{font-size:14px;max-width:100%;}
+  .notice-slim{display:none;}.user-chip{display:none;}
 }
 </style>
 """, unsafe_allow_html=True)
@@ -154,7 +100,7 @@ button[kind="secondary"]{border-radius:12px !important;}
 # -----------------------------------------------------------------------------
 TEXT = {
     "English": {
-        "input":"Message MechAI Pro…",
+        "input":"Ask anything engineering…",
         "title":"What would you like to engineer today?",
         "subtitle":"Ask once. MechAI routes to the right engineering specialist and builds a structured answer.",
         "notice":"⚠️ Demo notice: MechAI Pro is an engineering copilot prototype. It does not replace professional engineering verification, certified calculations, CAD/FEA/CFD validation, code compliance, or safety review. Public version is session-only; do not upload confidential files.",
@@ -166,7 +112,7 @@ TEXT = {
         "footer":"MechAI Pro · Public Demo · Mechanical Engineering AI Copilot · Verify all outputs before engineering use",
     },
     "العربية": {
-        "input":"اكتب طلبك الهندسي…",
+        "input":"اسأل أي شيء هندسي…",
         "title":"ماذا تريد أن تصمم أو تحلل اليوم؟",
         "subtitle":"اكتب طلبك مرة واحدة، وسيتم توجيهه للوكيل الهندسي المناسب لإنتاج إجابة منظمة.",
         "notice":"⚠️ تنبيه: MechAI Pro نموذج أولي لمساعد هندسي. لا يغني عن المراجعة الهندسية الاحترافية، الحسابات المعتمدة، تحقق CAD/FEA/CFD، الالتزام بالكود، أو مراجعة السلامة. النسخة العامة مؤقتة؛ لا ترفع ملفات سرية.",
@@ -408,30 +354,22 @@ def call_llm(prompt: str, provider: str, model_id: str, openai_key: str, gemini_
     return primary
 
 # -----------------------------------------------------------------------------
-# Sidebar — quiet ChatGPT-like navigation
-# -----------------------------------------------------------------------------
+# Sidebar — ChatGPT-like navigation, minimal
 with st.sidebar:
-    st.markdown("""
-    <div class="sidebar-brand">
-      <h2>⚙️ MechAI Pro</h2>
-      <p>Mechanical AI copilot<br>Project-aware. Agent-routed.</p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-title">MechAI Pro</div>', unsafe_allow_html=True)
 
-    if st.button("✎ New chat", use_container_width=True):
+    if st.button("✎  New chat", use_container_width=True):
         st.session_state.messages = []
         save_chat(st.session_state.project, [])
         st.rerun()
 
-    lang = st.selectbox("Interface / الواجهة", ["English", "العربية"], index=0 if st.session_state.lang=="English" else 1)
-    st.session_state.lang = lang
-    tr = TEXT[lang]
+    st.markdown('<div class="nav-btn">⌕&nbsp;&nbsp;Search chats</div>', unsafe_allow_html=True)
+    st.markdown('<div class="nav-btn">▥&nbsp;&nbsp;Library</div>', unsafe_allow_html=True)
 
-    view = st.radio("View", ["Chat", "About"], horizontal=False, index=0 if st.session_state.view=="Chat" else 1)
+    view = st.radio("", ["Chat", "About"], horizontal=False, index=0 if st.session_state.view=="Chat" else 1, label_visibility="collapsed")
     st.session_state.view = view
 
-    st.divider()
-    st.caption("Projects")
+    st.markdown('<div class="side-label">Projects</div>', unsafe_allow_html=True)
     projects = list_projects()
     selected = st.selectbox("Project", projects, index=projects.index(st.session_state.project) if st.session_state.project in projects else 0, label_visibility="collapsed")
     if selected != st.session_state.project:
@@ -451,23 +389,24 @@ with st.sidebar:
             st.session_state.messages = []
             st.rerun()
     with c2:
-        if st.button(tr["clear"], use_container_width=True):
+        if st.button("Clear", use_container_width=True):
             st.session_state.messages = []
             save_chat(st.session_state.project, [])
             st.rerun()
 
-    st.divider()
-    provider = st.selectbox("AI", ["OpenAI / ChatGPT", "Gemini backup"], index=0 if "OpenAI" in st.session_state.provider else 1)
-    st.session_state.provider = provider
-    openai_key = get_openai_key(); gemini_key = get_gemini_key()
-    if "OpenAI" in provider:
-        st.markdown(f"<div class='{ 'status-ok' if openai_key else 'status-warn'}'>● OpenAI {tr['connected'] if openai_key else tr['missing']}</div>", unsafe_allow_html=True)
-        model_id = st.text_input("Model", value="gpt-4o-mini")
-    else:
-        st.markdown(f"<div class='{ 'status-ok' if gemini_key else 'status-warn'}'>● Gemini {tr['connected'] if gemini_key else tr['missing']}</div>", unsafe_allow_html=True)
-        model_id = st.text_input("Model", value="gemini-2.5-flash-lite")
-
-    with st.expander("Knowledge", expanded=False):
+    # Quiet settings: hidden by default to avoid visual noise.
+    with st.expander("Settings", expanded=False):
+        lang = st.selectbox("Interface / الواجهة", ["English", "العربية"], index=0 if st.session_state.lang=="English" else 1)
+        st.session_state.lang = lang
+        provider = st.selectbox("AI", ["OpenAI / ChatGPT", "Gemini backup"], index=0 if "OpenAI" in st.session_state.provider else 1)
+        st.session_state.provider = provider
+        openai_key = get_openai_key(); gemini_key = get_gemini_key()
+        if "OpenAI" in provider:
+            st.markdown(f"<div class='{ 'status-ok' if openai_key else 'status-warn'}'>● OpenAI {TEXT[st.session_state.lang]['connected'] if openai_key else TEXT[st.session_state.lang]['missing']}</div>", unsafe_allow_html=True)
+            model_id = st.text_input("Model", value="gpt-4o-mini")
+        else:
+            st.markdown(f"<div class='{ 'status-ok' if gemini_key else 'status-warn'}'>● Gemini {TEXT[st.session_state.lang]['connected'] if gemini_key else TEXT[st.session_state.lang]['missing']}</div>", unsafe_allow_html=True)
+            model_id = st.text_input("Model", value="gemini-2.5-flash-lite")
         pdfs = st.file_uploader("Upload PDF references", type=["pdf"], accept_multiple_files=True)
         if pdfs:
             chunks=[]
@@ -477,7 +416,7 @@ with st.sidebar:
             st.session_state.kb_chunks = chunks
             st.success(f"Indexed {len(chunks)} chunks for this session.")
 
-    st.caption("🔒 " + tr["session"])
+    st.markdown('<div class="user-chip">⚙️ Wafeeq / MechAI Pro</div>', unsafe_allow_html=True)
 
 tr = TEXT[st.session_state.lang]
 openai_key = get_openai_key(); gemini_key = get_gemini_key()
@@ -486,15 +425,7 @@ provider_badge = "OpenAI" if "OpenAI" in st.session_state.provider else "Gemini"
 
 # -----------------------------------------------------------------------------
 # Main UI — minimal ChatGPT-style center
-# -----------------------------------------------------------------------------
-st.markdown(f"""
-<div class="top-status">
-  <div class="mini-badge">📁 {html.escape(st.session_state.project)}</div>
-  <div class="mini-badge">{html.escape(agent_name)}</div>
-  <div class="mini-badge">AI {html.escape(provider_badge)}</div>
-  <div class="mini-badge">📚 {len(st.session_state.kb_chunks)} chunks</div>
-</div>
-""", unsafe_allow_html=True)
+# No header, no top badges, no dashboard. The conversation is the product.
 
 if st.session_state.view == "About":
     st.markdown(f"""
@@ -507,17 +438,10 @@ if st.session_state.view == "About":
     """, unsafe_allow_html=True)
 else:
     if not st.session_state.messages:
-        greeting = "Good to see you, Nael." if st.session_state.lang == "English" else "أهلًا نائل، ماذا تريد أن تنجز اليوم؟"
+        greeting = "Good to see you, Wafeeq." if st.session_state.lang == "English" else "أهلًا وفيق."
         st.markdown(f"""
         <div class="landing">
           <h1>{greeting}</h1>
-          <div class="quick-row">
-            <div class="quick-pill">DFM review</div>
-            <div class="quick-pill">FEA plan</div>
-            <div class="quick-pill">CFD setup</div>
-            <div class="quick-pill">SolidWorks macro</div>
-          </div>
-          <div class="notice-mini">MechAI Pro is a public demo. Verify engineering outputs before use.</div>
         </div>
         """, unsafe_allow_html=True)
     else:
@@ -542,7 +466,7 @@ else:
                 st.markdown(content)
                 st.markdown("</div></div>", unsafe_allow_html=True)
 
-    st.markdown(f"<div class='footer-line'>{html.escape(tr['footer'])}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='notice-slim'>{html.escape(tr['footer'])}</div>", unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
 # Chat input and execution
