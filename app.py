@@ -25,7 +25,11 @@ except Exception:
 
 APP_DIR = Path(__file__).parent
 PROJECTS_DIR = APP_DIR / "projects"
-PROJECTS_DIR.mkdir(exist_ok=True)
+# Public deployment safety: by default, MechAI Pro does NOT persist user chats/files to local disk.
+# Enable local project persistence only for private/local installs by setting MECHAI_ENABLE_LOCAL_SAVE=true.
+LOCAL_SAVE_ENABLED = os.getenv("MECHAI_ENABLE_LOCAL_SAVE", "false").strip().lower() == "true"
+if LOCAL_SAVE_ENABLED:
+    PROJECTS_DIR.mkdir(exist_ok=True)
 
 st.set_page_config(page_title="MechAI Pro", page_icon="⚙️", layout="wide", initial_sidebar_state="expanded")
 
@@ -76,7 +80,15 @@ html, body, [class*="css"] { font-family: Inter, system-ui, sans-serif; }
 .toolbox-text { color:#9FB0D0; font-size:12px; line-height:1.55; }
 .stChatInputContainer { background:rgba(8,11,18,.92)!important; border-top:1px solid rgba(255,255,255,.06); }
 textarea, input, .stTextInput input, .stTextArea textarea { border-radius:14px!important; }
-@media (max-width: 1100px){ .quick-grid{grid-template-columns:repeat(2,1fr);} .brand h1{font-size:20px;} }
+.demo-warning { border:1px solid rgba(255,184,77,.35); background:rgba(255,184,77,.08); color:#FFE6B5; border-radius:16px; padding:12px 14px; margin:10px 0 16px 0; font-size:13px; line-height:1.55; }
+.status-ok { color:#30D98B; font-weight:800; }
+.status-bad { color:#FFB84D; font-weight:800; }
+.app-footer { margin:34px 0 10px 0; padding:14px 0 0 0; border-top:1px solid rgba(255,255,255,.08); color:#8292B5; font-size:12px; text-align:center; }
+.about-card { border:1px solid #28354F; background:rgba(17,26,46,.55); border-radius:18px; padding:18px; margin:12px 0; }
+.about-card h3 { margin:0 0 8px 0; }
+.about-card p, .about-card li { color:#B5C6E6; line-height:1.7; }
+@media (max-width: 1100px){ .quick-grid{grid-template-columns:repeat(2,1fr);} .brand h1{font-size:20px;} .hero-mini{align-items:flex-start; flex-direction:column;} .pillrow{justify-content:flex-start; margin-top:10px;} }
+@media (max-width: 760px){ .block-container{padding:0.8rem 0.85rem 6rem 0.85rem;} .chat-welcome{padding:48px 8px 20px 8px;} .chat-welcome h2{font-size:28px;} .chat-welcome p{font-size:13px;} .quick-grid{grid-template-columns:1fr;} .hero-mini{border-radius:18px; padding:14px;} .logo{width:38px;height:38px;font-size:20px;} .brand h1{font-size:19px;} .brand p{font-size:12px;} .pill{font-size:11px; padding:7px 10px;} [data-testid="stSidebar"]{min-width:280px!important;} }
 </style>
 """, unsafe_allow_html=True)
 
@@ -89,7 +101,8 @@ T = {
         "welcome_sub":"Ask a focused engineering question. MechAI routes it to the right specialist and uses your project memory and uploaded references.",
         "input":"Message MechAI Pro…", "right":"Engineering Studio", "brain":"Active Brain", "agent":"Routed Agent",
         "refs":"Reference Brain", "tools":"Tools", "upload":"Knowledge Vault", "vision":"Vision input", "project":"Current project",
-        "no_key":"Add your Gemini API key in the sidebar or set GEMINI_API_KEY in PowerShell.",
+        "no_key":"Gemini API key is missing. Add it in Streamlit Secrets as GEMINI_API_KEY.",
+        "nav":"View", "chat":"Chat", "about":"About", "clear":"Clear chat", "session":"Session-only demo: chats and uploads are not permanently saved on the public app.",
     },
     "العربية": {
         "tagline":"مساحة ذكاء اصطناعي ميكانيكية للتصميم، الأتمتة، المحاكاة، الموائع، التصنيع، والاختراع.",
@@ -98,7 +111,8 @@ T = {
         "welcome_sub":"اكتب سؤالًا هندسيًا واضحًا. MechAI يوجهه للوكيل المناسب ويستخدم ذاكرة المشروع والمراجع المرفوعة.",
         "input":"اكتب إلى MechAI Pro…", "right":"استوديو الهندسة", "brain":"العقل النشط", "agent":"الوكيل المختار",
         "refs":"العقل المرجعي", "tools":"الأدوات", "upload":"خزنة المعرفة", "vision":"إدخال بصري", "project":"المشروع الحالي",
-        "no_key":"أضف مفتاح Gemini من الشريط الجانبي أو عرّف GEMINI_API_KEY في PowerShell.",
+        "no_key":"مفتاح Gemini غير موجود. أضفه في Streamlit Secrets باسم GEMINI_API_KEY.",
+        "nav":"العرض", "chat":"المحادثة", "about":"حول التطبيق", "clear":"مسح المحادثة", "session":"نسخة عرض مؤقتة: المحادثات والملفات لا يتم حفظها بشكل دائم في النسخة العامة.",
     }
 }
 
@@ -139,28 +153,51 @@ def project_path(name: str) -> Path:
     return PROJECTS_DIR / slugify(name)
 
 def ensure_project(name: str):
+    if not LOCAL_SAVE_ENABLED:
+        return
     p = project_path(name); p.mkdir(exist_ok=True)
     (p/"files").mkdir(exist_ok=True)
     if not (p/"chat.json").exists(): (p/"chat.json").write_text("[]", encoding="utf-8")
     if not (p/"memory.json").exists(): (p/"memory.json").write_text(json.dumps({"created":datetime.now().isoformat(),"notes":[]}, ensure_ascii=False, indent=2), encoding="utf-8")
 
 def list_projects():
+    if not LOCAL_SAVE_ENABLED:
+        return st.session_state.get("project_names", ["RD_Lab"])
     names = [p.name for p in PROJECTS_DIR.iterdir() if p.is_dir()]
     if not names:
-        ensure_project("R&D Lab")
-        names = ["R&D_Lab"]
+        ensure_project("RD_Lab")
+        names = ["RD_Lab"]
     return sorted(names)
 
 def load_chat(project: str) -> List[Dict]:
+    if not LOCAL_SAVE_ENABLED:
+        return []
     ensure_project(project)
     try: return json.loads((project_path(project)/"chat.json").read_text(encoding="utf-8"))
     except Exception: return []
 
 def save_chat(project: str, messages: List[Dict]):
+    if not LOCAL_SAVE_ENABLED:
+        return
     ensure_project(project)
     (project_path(project)/"chat.json").write_text(json.dumps(messages, ensure_ascii=False, indent=2), encoding="utf-8")
 
+def clear_chat(project: str):
+    st.session_state.messages = []
+    if LOCAL_SAVE_ENABLED:
+        save_chat(project, [])
+
+def get_api_key() -> str:
+    # Streamlit Cloud: store this in App settings > Secrets as GEMINI_API_KEY = "..."
+    try:
+        if hasattr(st, "secrets") and "GEMINI_API_KEY" in st.secrets:
+            return str(st.secrets["GEMINI_API_KEY"]).strip()
+    except Exception:
+        pass
+    return os.getenv("GEMINI_API_KEY", "").strip()
+
 if "lang" not in st.session_state: st.session_state.lang = "English"
+if "project_names" not in st.session_state: st.session_state.project_names = ["RD_Lab"]
 if "project" not in st.session_state: st.session_state.project = list_projects()[0]
 if "messages" not in st.session_state: st.session_state.messages = load_chat(st.session_state.project)
 if "last_agent" not in st.session_state: st.session_state.last_agent = "chief"
@@ -258,7 +295,12 @@ with st.sidebar:
     lang = st.selectbox("Interface / الواجهة", ["English", "العربية"], index=0 if st.session_state.lang=="English" else 1)
     st.session_state.lang = lang
     tr = T[lang]
-    api_key = st.text_input(tr["api"], value=os.getenv("GEMINI_API_KEY", ""), type="password")
+    view = st.radio(tr["nav"], [tr["chat"], tr["about"]], horizontal=True)
+    api_key = get_api_key()
+    if api_key:
+        st.markdown("<div class='status-ok'>● Gemini connected</div>", unsafe_allow_html=True)
+    else:
+        st.markdown("<div class='status-bad'>● Gemini key missing</div>", unsafe_allow_html=True)
     model_id = st.text_input(tr["model"], value="gemini-2.5-flash")
     st.divider()
     st.caption(tr["projects"])
@@ -272,9 +314,16 @@ with st.sidebar:
     with c1:
         if st.button(tr["new_project"], use_container_width=True):
             name = "Project_" + datetime.now().strftime("%Y%m%d_%H%M")
+            if not LOCAL_SAVE_ENABLED:
+                st.session_state.project_names = list(dict.fromkeys(st.session_state.project_names + [name]))
             ensure_project(name); st.session_state.project=name; st.session_state.messages=[]; st.rerun()
     with c2:
-        if st.button(tr["save"], use_container_width=True): save_chat(st.session_state.project, st.session_state.messages); st.toast("Saved")
+        if st.button(tr["clear"], use_container_width=True):
+            clear_chat(st.session_state.project); st.rerun()
+    if not LOCAL_SAVE_ENABLED:
+        st.caption("🔒 " + tr["session"])
+    else:
+        st.caption("💾 Local save enabled for private/local install.")
     st.divider()
     st.caption("Agent Brain")
     for k,(n,d) in AGENTS.items():
@@ -311,6 +360,28 @@ st.markdown(f"""
   </div>
 </div>
 """, unsafe_allow_html=True)
+
+st.markdown(f"<div class='demo-warning'>⚠️ <b>Demo notice:</b> MechAI Pro is an engineering copilot prototype. It does not replace professional engineering verification, certified calculations, CAD/FEA/CFD validation, code compliance, or safety review. Public version is session-only; do not upload confidential files.</div>", unsafe_allow_html=True)
+
+if view == tr["about"]:
+    st.markdown("""
+    <div class='about-card'>
+      <h3>About MechAI Pro</h3>
+      <p><b>MechAI Pro</b> is a public MVP of a mechanical engineering AI workspace for product R&D, CAD automation, FEA/CFD planning, DFM/DFA, material reasoning, and invention support.</p>
+      <p>This hosted version is designed as a demo. It routes engineering questions to specialist agents and can use uploaded references during the current session.</p>
+    </div>
+    <div class='about-card'>
+      <h3>Important engineering limitation</h3>
+      <ul>
+        <li>Outputs are engineering guidance, not certified calculations.</li>
+        <li>Do not rely on it alone for safety-critical design, regulatory compliance, pressure systems, lifting systems, medical devices, or production release.</li>
+        <li>Always verify results using accepted engineering standards, qualified review, physical testing, and validated CAD/FEA/CFD workflows.</li>
+        <li>Do not upload confidential drawings, customer data, proprietary designs, or sensitive files to this public demo.</li>
+      </ul>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown("<div class='app-footer'>MechAI Pro · Public Demo · Mechanical Engineering AI Copilot</div>", unsafe_allow_html=True)
+    st.stop()
 
 # Chat-first layout: no right panel before the first message.
 if not st.session_state.messages:
@@ -366,3 +437,6 @@ if user_prompt:
     st.session_state.messages.append({"role":"assistant", "content":answer, "time":datetime.now().isoformat(), "agent":agent})
     save_chat(st.session_state.project, st.session_state.messages)
     st.rerun()
+
+
+st.markdown("<div class='app-footer'>MechAI Pro · Public Demo · Mechanical Engineering AI Copilot · Verify all outputs before engineering use</div>", unsafe_allow_html=True)
