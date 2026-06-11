@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-MechAI Pro v9 — World-Class Chat UI
-Public mechanical engineering AI copilot with OpenAI as primary provider and Gemini as optional backup.
+MechAI Pro v10 — Executive Command UI
+Premium command-center mechanical engineering AI copilot with OpenAI as primary provider and Gemini as optional backup.
 Run: streamlit run app.py
 """
 import os, json, re, math
@@ -46,146 +46,95 @@ st.markdown(r"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 :root{
-  --bg:#060914;
-  --panel:#0B1020;
-  --panel2:#10182A;
-  --panel3:#111B31;
-  --line:rgba(148,163,184,.22);
-  --line2:rgba(110,231,249,.22);
-  --text:#F8FAFC;
-  --muted:#9AA8C7;
-  --muted2:#71809E;
-  --cyan:#6EE7F9;
-  --violet:#A78BFA;
-  --amber:#FBBF24;
-  --green:#22C55E;
-  --red:#FB4D63;
-  --blue:#60A5FA;
+  --bg:#050711; --ink:#F8FAFC; --muted:#A8B3CF; --faint:#6F7B99;
+  --panel:rgba(9,14,28,.72); --panel2:rgba(13,20,38,.82); --glass:rgba(15,23,42,.58);
+  --line:rgba(148,163,184,.18); --cyan:#67E8F9; --blue:#60A5FA; --violet:#A78BFA;
+  --green:#22C55E; --amber:#FBBF24; --red:#FB4D63;
 }
 html, body, [class*="css"]{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;}
 .stApp{
-  color:var(--text);
+  color:var(--ink);
   background:
-    radial-gradient(circle at 15% -10%, rgba(96,165,250,.22), transparent 28%),
-    radial-gradient(circle at 85% 0%, rgba(167,139,250,.18), transparent 32%),
-    linear-gradient(180deg,#070B16 0%, #050712 100%);
+    radial-gradient(circle at 18% 3%, rgba(103,232,249,.20), transparent 28%),
+    radial-gradient(circle at 84% 8%, rgba(167,139,250,.18), transparent 30%),
+    radial-gradient(circle at 50% 100%, rgba(96,165,250,.10), transparent 30%),
+    linear-gradient(180deg,#060914 0%,#030510 100%);
+}
+.stApp:before{
+  content:""; position:fixed; inset:0; pointer-events:none; opacity:.22; z-index:0;
+  background-image:linear-gradient(rgba(148,163,184,.10) 1px, transparent 1px),linear-gradient(90deg,rgba(148,163,184,.10) 1px, transparent 1px);
+  background-size:56px 56px; mask-image:radial-gradient(circle at 50% 35%, black, transparent 72%);
 }
 #MainMenu, footer, header{visibility:hidden;}
-.block-container{max-width:1180px; padding:1.05rem 1.45rem 7.5rem 1.45rem;}
+.block-container{max-width:1220px; padding:1.05rem 1.7rem 7.3rem 1.7rem; position:relative; z-index:1;}
 [data-testid="stSidebar"]{
-  background:linear-gradient(180deg,rgba(10,15,30,.98),rgba(5,8,18,.98));
-  border-right:1px solid var(--line);
-  box-shadow:18px 0 60px rgba(0,0,0,.28);
+  background:linear-gradient(180deg,rgba(8,12,25,.94),rgba(3,6,14,.98));
+  border-right:1px solid rgba(103,232,249,.14); box-shadow:18px 0 70px rgba(0,0,0,.40);
 }
-[data-testid="stSidebar"] *{color:var(--text);} 
+[data-testid="stSidebar"] *{color:var(--ink);} 
+[data-testid="stSidebar"] section{padding-top:0!important;}
 [data-testid="stSidebar"] .stButton button{
-  border-radius:16px; border:1px solid rgba(96,165,250,.28); background:rgba(17,24,39,.82); color:#fff;
-  height:46px; font-weight:700;
+  border-radius:16px; border:1px solid rgba(103,232,249,.25); background:linear-gradient(135deg,rgba(15,23,42,.88),rgba(7,12,26,.88)); color:#fff;
+  height:46px; font-weight:800; box-shadow:0 10px 28px rgba(0,0,0,.18);
 }
-[data-testid="stSidebar"] .stButton button:hover{border-color:rgba(110,231,249,.55); background:rgba(30,41,59,.92);}
+[data-testid="stSidebar"] .stButton button:hover{border-color:rgba(103,232,249,.60); transform:translateY(-1px);}
 [data-testid="stSelectbox"] div[data-baseweb="select"] > div,
 [data-testid="stTextInput"] input{
-  background:rgba(10,14,26,.92) !important; border:1px solid rgba(148,163,184,.16) !important; border-radius:14px !important;
+  background:rgba(5,9,20,.88) !important; border:1px solid rgba(148,163,184,.18) !important; border-radius:14px !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
 }
 [data-testid="stExpander"]{
-  background:rgba(8,12,24,.72); border:1px solid var(--line) !important; border-radius:18px !important; overflow:hidden;
+  background:rgba(6,10,22,.54); border:1px solid rgba(148,163,184,.15) !important; border-radius:18px !important; overflow:hidden;
 }
 .sidebar-card{
-  border:1px solid rgba(110,231,249,.18);
-  background:linear-gradient(135deg,rgba(20,28,50,.92),rgba(10,15,30,.92));
-  border-radius:24px; padding:22px 20px; margin:10px 0 24px;
-  box-shadow:0 20px 70px rgba(0,0,0,.25);
+  position:relative; overflow:hidden; border:1px solid rgba(103,232,249,.18);
+  background:linear-gradient(145deg,rgba(20,31,57,.72),rgba(6,10,22,.78)); border-radius:26px;
+  padding:22px 20px; margin:10px 0 24px; box-shadow:0 22px 80px rgba(0,0,0,.34);
 }
-.sidebar-card h2{font-size:24px; margin:0 0 8px; letter-spacing:-.05em;}
-.sidebar-card p{font-size:13px; color:#B6C5E5; line-height:1.65; margin:0;}
-.status-ok{color:var(--green); font-weight:800; margin:8px 0 4px;}
-.status-warn{color:var(--amber); font-weight:800; margin:8px 0 4px;}
-.topbar{
-  position:relative; overflow:hidden;
-  border:1px solid rgba(110,231,249,.20);
-  background:linear-gradient(135deg,rgba(16,24,43,.94),rgba(8,13,24,.90));
-  border-radius:28px; padding:18px 20px; margin:6px 0 18px;
-  box-shadow:0 24px 90px rgba(0,0,0,.30);
+.sidebar-card:before{content:""; position:absolute; inset:-40%; background:radial-gradient(circle at 20% 0%,rgba(103,232,249,.18),transparent 30%);}
+.sidebar-card h2{position:relative;font-size:24px; margin:0 0 8px; letter-spacing:-.05em;}
+.sidebar-card p{position:relative;font-size:13px; color:#B6C5E5; line-height:1.65; margin:0;}
+.status-ok{color:var(--green); font-weight:900; margin:10px 0 4px;}
+.status-warn{color:var(--amber); font-weight:900; margin:10px 0 4px;}
+.command-shell{
+  position:relative; overflow:hidden; border:1px solid rgba(103,232,249,.17); border-radius:34px; padding:22px 24px;
+  background:linear-gradient(135deg,rgba(14,22,40,.75),rgba(5,8,18,.72)); box-shadow:0 28px 120px rgba(0,0,0,.34);
 }
-.topbar:before{
-  content:""; position:absolute; inset:-2px; pointer-events:none;
-  background:radial-gradient(circle at 4% 10%,rgba(110,231,249,.20),transparent 22%),radial-gradient(circle at 88% 0%,rgba(167,139,250,.18),transparent 24%);
-}
-.topbar-inner{position:relative; display:flex; justify-content:space-between; align-items:center; gap:18px;}
-.brandbox{display:flex; align-items:center; gap:14px; min-width:0;}
-.logo-orb{
-  width:54px;height:54px;border-radius:18px;display:grid;place-items:center;font-size:27px;font-weight:900;color:#06101B;
-  background:linear-gradient(135deg,#6EE7F9 0%,#A78BFA 100%); box-shadow:0 0 34px rgba(110,231,249,.25);
-}
-.brandbox h1{font-size:30px; margin:0; letter-spacing:-.06em; line-height:1;}
-.brandbox p{font-size:13px; color:#B8C7EA; margin:7px 0 0;}
-.badges{display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px;}
-.badge{
-  border:1px solid rgba(148,163,184,.25); background:rgba(15,23,42,.66); border-radius:999px;
-  padding:9px 13px; font-size:12px; color:#DDE7FF; font-weight:700; white-space:nowrap;
-}
-.notice{
-  border:1px solid rgba(251,191,36,.36); background:linear-gradient(90deg,rgba(251,191,36,.11),rgba(251,191,36,.045));
-  border-radius:18px; padding:12px 16px; color:#FFE9A8; font-size:13px; line-height:1.55; margin:0 0 22px;
-}
-.hero{
-  min-height:44vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
-  padding:18px 0 10px;
-}
-.hero-kicker{font-size:12px; color:var(--cyan); letter-spacing:.22em; font-weight:900; text-transform:uppercase; margin-bottom:14px;}
-.hero h2{font-size:clamp(40px,5vw,76px); line-height:.98; max-width:900px; margin:0; letter-spacing:-.075em; font-weight:900;}
-.hero p{max-width:760px; margin:20px auto 22px; color:#B7C7EA; font-size:17px; line-height:1.7;}
-.quick-grid{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; max-width:900px; width:100%; margin-top:8px;}
-.quick-chip{
-  border:1px solid rgba(148,163,184,.18); background:rgba(15,23,42,.48); border-radius:18px; padding:14px 13px; text-align:left;
-  box-shadow:0 18px 40px rgba(0,0,0,.16);
-}
-.quick-chip b{font-size:13px; display:block; margin-bottom:5px;}
-.quick-chip span{font-size:12px; color:#AAB9D7; line-height:1.5;}
-.info-strip{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:0 0 18px;}
-.info-card{border:1px solid rgba(148,163,184,.16); background:rgba(8,13,25,.55); border-radius:18px; padding:12px 14px;}
-.info-card small{display:block;color:#7F8CAB;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;margin-bottom:5px;}
+.command-shell:before{content:""; position:absolute; inset:-1px; background:radial-gradient(circle at 8% 5%,rgba(103,232,249,.22),transparent 20%),radial-gradient(circle at 96% 0%,rgba(167,139,250,.22),transparent 26%); pointer-events:none;}
+.command-top{position:relative; display:flex; align-items:center; justify-content:space-between; gap:18px;}
+.brandbox{display:flex; align-items:center; gap:15px; min-width:0;}
+.logo-orb{width:56px;height:56px;border-radius:19px;display:grid;place-items:center;font-size:27px;font-weight:900;color:#03101B;background:linear-gradient(135deg,#67E8F9,#A78BFA); box-shadow:0 0 0 1px rgba(255,255,255,.18),0 0 38px rgba(103,232,249,.24);}
+.brandbox h1{font-size:31px; margin:0; letter-spacing:-.065em; line-height:1;}
+.brandbox p{font-size:13px;color:#B7C8EA;margin:8px 0 0;}
+.badges{display:flex; flex-wrap:wrap; justify-content:flex-end; gap:9px;}
+.badge{border:1px solid rgba(148,163,184,.22); background:rgba(15,23,42,.46); border-radius:999px; padding:9px 13px; font-size:12px; color:#E6EEFF; font-weight:800; white-space:nowrap; backdrop-filter:blur(10px);}
+.notice{border:1px solid rgba(251,191,36,.32); background:rgba(251,191,36,.075); border-radius:18px; padding:12px 16px; color:#FFE9A8; font-size:13px; line-height:1.55; margin:16px 0 26px;}
+.hero{min-height:42vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:18px 0 4px;}
+.hero-kicker{display:inline-flex; gap:10px; align-items:center; font-size:12px; color:var(--cyan); letter-spacing:.24em; font-weight:900; text-transform:uppercase; margin-bottom:16px;}
+.hero h2{font-size:clamp(44px,6vw,86px); line-height:.93; max-width:980px; margin:0; letter-spacing:-.085em; font-weight:900;}
+.hero h2 span{background:linear-gradient(90deg,#FFFFFF,#C7D2FE,#67E8F9); -webkit-background-clip:text; color:transparent;}
+.hero p{max-width:760px; margin:22px auto 0; color:#B7C7EA; font-size:17px; line-height:1.72;}
+.command-strip{display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:24px auto 0; max-width:950px;}
+.command-pill{border:1px solid rgba(148,163,184,.18); background:rgba(15,23,42,.46); border-radius:999px; padding:10px 14px; color:#DCE8FF; font-size:12px; font-weight:800; box-shadow:0 18px 40px rgba(0,0,0,.16);}
+.info-strip{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:8px 0 18px;}
+.info-card{border:1px solid rgba(148,163,184,.15); background:rgba(8,13,25,.62); border-radius:18px; padding:12px 14px;}
+.info-card small{display:block;color:#7F8CAB;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.13em;margin-bottom:5px;}
 .info-card b{font-size:14px;color:#F8FAFC;}
 .message-row{display:flex; gap:13px; margin:22px 0; align-items:flex-start;}
-.avatar{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;font-size:19px;flex:0 0 auto;}
+.avatar{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;font-size:18px;flex:0 0 auto;}
 .avatar.user{background:linear-gradient(135deg,#FB4D63,#FF8A3D);}
-.avatar.ai{background:linear-gradient(135deg,#6EE7F9,#A78BFA); color:#06101B;}
-.bubble{max-width:860px; border-radius:22px; padding:16px 18px; line-height:1.72; font-size:15px;}
+.avatar.ai{background:linear-gradient(135deg,#67E8F9,#A78BFA); color:#06101B;}
+.bubble{max-width:900px; border-radius:22px; padding:16px 18px; line-height:1.72; font-size:15px;}
 .bubble.user{background:rgba(251,77,99,.08); border:1px solid rgba(251,77,99,.18);}
-.bubble.ai{background:linear-gradient(135deg,rgba(15,23,42,.76),rgba(9,14,26,.70)); border:1px solid rgba(110,231,249,.18); box-shadow:0 18px 48px rgba(0,0,0,.18);}
-.bubble p{margin:0 0 .75rem;} .bubble ul,.bubble ol{margin-top:.2rem;} .bubble h1,.bubble h2,.bubble h3{letter-spacing:-.04em;}
-.agent-tag{display:inline-flex; gap:6px; align-items:center; padding:5px 9px; border-radius:999px; background:rgba(96,165,250,.10); border:1px solid rgba(96,165,250,.22); color:#C9DCFF; font-size:11px; font-weight:800; margin-bottom:10px;}
-.composer-note{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;color:#64748B;font-size:11px;text-align:center;z-index:999;width:100%;pointer-events:none;}
-[data-testid="stChatInput"]{background:rgba(5,7,13,.30); backdrop-filter:blur(16px); border-top:1px solid rgba(148,163,184,.10); padding-bottom:16px;}
-[data-testid="stChatInput"] textarea{
-  border-radius:22px !important; border:1px solid rgba(110,231,249,.28) !important;
-  background:rgba(15,23,42,.92) !important; color:#F8FAFC !important; min-height:54px !important;
-  box-shadow:0 12px 44px rgba(0,0,0,.28) !important;
-}
-.footer-line{border-top:1px solid rgba(148,163,184,.14); margin:22px 0 0; padding:18px 0 6px; color:#7785A5; text-align:center; font-size:12px;}
-.about-card{border:1px solid rgba(110,231,249,.20);background:rgba(10,15,30,.72);border-radius:24px;padding:24px;line-height:1.75;}
-/* Streamlit default content cleanup */
-.stMarkdown a{color:#7DD3FC;}
-button[kind="secondary"]{border-radius:14px !important;}
-@media (max-width: 980px){
-  .block-container{padding:0.75rem 0.85rem 7rem;}
-  .topbar-inner{align-items:flex-start; flex-direction:column;}
-  .badges{justify-content:flex-start;}
-  .brandbox h1{font-size:25px;}
-  .logo-orb{width:46px;height:46px;border-radius:15px;}
-  .quick-grid{grid-template-columns:1fr 1fr;}
-  .info-strip{grid-template-columns:1fr;}
-  .hero{min-height:42vh; padding-top:12px;}
-  .hero h2{font-size:42px;}
-  .hero p{font-size:14px;}
-  .bubble{max-width:100%; font-size:14px;}
-}
-@media (max-width: 560px){
-  .quick-grid{grid-template-columns:1fr;}
-  .hero h2{font-size:34px;}
-  .topbar{border-radius:20px;padding:15px;}
-  .notice{font-size:12px;}
-}
+.bubble.ai{background:linear-gradient(135deg,rgba(15,23,42,.76),rgba(9,14,26,.70)); border:1px solid rgba(103,232,249,.17); box-shadow:0 18px 48px rgba(0,0,0,.18);}
+.agent-tag{display:inline-flex; gap:6px; align-items:center; padding:5px 9px; border-radius:999px; background:rgba(96,165,250,.10); border:1px solid rgba(96,165,250,.22); color:#C9DCFF; font-size:11px; font-weight:900; margin-bottom:10px;}
+[data-testid="stChatInput"]{background:rgba(3,5,12,.64); backdrop-filter:blur(20px); border-top:1px solid rgba(148,163,184,.10); padding-bottom:16px;}
+[data-testid="stChatInput"] textarea{border-radius:24px !important; border:1px solid rgba(103,232,249,.32) !important; background:rgba(12,18,34,.96) !important; color:#F8FAFC !important; min-height:58px !important; box-shadow:0 16px 60px rgba(0,0,0,.34) !important;}
+.footer-line{border-top:1px solid rgba(148,163,184,.13); margin:24px 0 0; padding:18px 0 6px; color:#7785A5; text-align:center; font-size:12px;}
+.about-card{border:1px solid rgba(103,232,249,.20);background:rgba(8,13,25,.70);border-radius:26px;padding:24px;line-height:1.75;}
+.stMarkdown a{color:#7DD3FC;} button[kind="secondary"]{border-radius:14px !important;}
+@media (max-width: 980px){.block-container{padding:.75rem .85rem 7rem}.command-top{align-items:flex-start;flex-direction:column}.badges{justify-content:flex-start}.brandbox h1{font-size:25px}.logo-orb{width:46px;height:46px;border-radius:15px}.info-strip{grid-template-columns:1fr}.hero{min-height:40vh}.hero h2{font-size:44px}.hero p{font-size:14px}.bubble{max-width:100%;font-size:14px}}
+@media (max-width:560px){.command-shell{border-radius:22px;padding:16px}.hero h2{font-size:36px}.notice{font-size:12px}.command-pill{font-size:11px;padding:8px 10px}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -196,7 +145,7 @@ TEXT = {
     "English": {
         "input":"Message MechAI Pro…",
         "title":"What would you like to engineer today?",
-        "subtitle":"A calm, specialist-routed engineering workspace for design, CAD automation, simulation, CFD, DFM and invention work.",
+        "subtitle":"Ask once. MechAI routes to the right engineering specialist and builds a structured answer.",
         "notice":"⚠️ Demo notice: MechAI Pro is an engineering copilot prototype. It does not replace professional engineering verification, certified calculations, CAD/FEA/CFD validation, code compliance, or safety review. Public version is session-only; do not upload confidential files.",
         "about_title":"About MechAI Pro",
         "about":"MechAI Pro is a public mechanical engineering AI copilot demo. It routes questions to specialist engineering agents, uses uploaded references within the current session, and can call OpenAI/ChatGPT as the primary provider with Gemini as backup. Treat all outputs as preliminary engineering assistance and verify them before use.",
@@ -208,7 +157,7 @@ TEXT = {
     "العربية": {
         "input":"اكتب طلبك الهندسي…",
         "title":"ماذا تريد أن تصمم أو تحلل اليوم؟",
-        "subtitle":"مساحة عمل هندسية ذكية للتصميم، CAD، المحاكاة، CFD، التصنيع، والاختراع.",
+        "subtitle":"اكتب طلبك مرة واحدة، وسيتم توجيهه للوكيل الهندسي المناسب لإنتاج إجابة منظمة.",
         "notice":"⚠️ تنبيه: MechAI Pro نموذج أولي لمساعد هندسي. لا يغني عن المراجعة الهندسية الاحترافية، الحسابات المعتمدة، تحقق CAD/FEA/CFD، الالتزام بالكود، أو مراجعة السلامة. النسخة العامة مؤقتة؛ لا ترفع ملفات سرية.",
         "about_title":"حول MechAI Pro",
         "about":"MechAI Pro هو نموذج عام لمساعد ذكاء اصطناعي هندسي ميكانيكي. يوجّه الأسئلة لوكلاء متخصصين، ويستخدم المراجع المرفوعة خلال الجلسة الحالية فقط، ويدعم OpenAI/ChatGPT كمزود أساسي مع Gemini كاحتياطي. جميع النتائج مبدئية ويجب التحقق منها هندسيًا قبل الاستخدام.",
@@ -528,11 +477,11 @@ agent_name = AGENTS.get(st.session_state.last_agent, AGENTS["chief"])[0]
 provider_badge = "AI OpenAI" if "OpenAI" in st.session_state.provider else "AI Gemini"
 
 st.markdown(f"""
-<div class="topbar">
-  <div class="topbar-inner">
+<div class="command-shell">
+  <div class="command-top">
     <div class="brandbox">
       <div class="logo-orb">⚙️</div>
-      <div><h1>MechAI Pro</h1><p>Mechanical intelligence workspace for R&D, CAD, simulation, CFD, DFM and invention.</p></div>
+      <div><h1>MechAI Pro</h1><p>Mechanical intelligence workspace for R&D, CAD automation, simulation, CFD, DFM and invention.</p></div>
     </div>
     <div class="badges">
       <div class="badge">📁 {st.session_state.project}</div>
@@ -564,13 +513,15 @@ else:
         st.markdown(f"""
         <div class="hero">
           <div class="hero-kicker">AI Mechanical Engineering OS</div>
-          <h2>{tr['title']}</h2>
+          <h2><span>{tr['title']}</span></h2>
           <p>{tr['subtitle']}</p>
-          <div class="quick-grid">
-            <div class="quick-chip"><b>🔧 Design Review</b><span>Failure modes, loads, materials and validation.</span></div>
-            <div class="quick-chip"><b>📊 FEA Plan</b><span>Loads, fixtures, mesh and convergence strategy.</span></div>
-            <div class="quick-chip"><b>🌊 CFD / Thermal</b><span>Flow domain, y+, turbulence and heat transfer.</span></div>
-            <div class="quick-chip"><b>🏭 DFM / Cost-down</b><span>Manufacturability, assembly risk and process choice.</span></div>
+          <div class="command-strip">
+            <div class="command-pill">🔧 Design Review</div>
+            <div class="command-pill">🧩 CAD Automation</div>
+            <div class="command-pill">📊 FEA Setup</div>
+            <div class="command-pill">🌊 CFD / Thermal</div>
+            <div class="command-pill">🏭 DFM / DFA</div>
+            <div class="command-pill">💡 Invention</div>
           </div>
         </div>
         """, unsafe_allow_html=True)
