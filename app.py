@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-MechAI Pro v15 — Minimal Sidebar Workspace Selector
-ChatGPT-like minimal interface with a cleaner sidebar, workspace selector, and reduced Streamlit chrome.
+MechAI Pro v16 — Fixed Sidebar Minimal UI
+ChatGPT-like minimal interface with an always-visible fixed sidebar and workspace selector.
 Run: streamlit run app.py
 """
 import os, json, re, math, html
@@ -40,7 +40,7 @@ st.set_page_config(
 )
 
 # -----------------------------------------------------------------------------
-# CSS — near-ChatGPT exact minimal black UI
+# CSS — fixed sidebar + near-ChatGPT exact minimal black UI
 # -----------------------------------------------------------------------------
 st.markdown(r"""
 <style>
@@ -52,10 +52,14 @@ st.markdown(r"""
 html,body,[class*="css"]{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;}
 .stApp{background:#000;color:var(--text);}
 #MainMenu, footer{visibility:hidden;height:0;}
-header[data-testid="stHeader"]{background:rgba(0,0,0,0)!important;visibility:visible!important;height:2.75rem!important;}
-[data-testid="collapsedControl"]{visibility:visible!important;display:flex!important;opacity:1!important;z-index:10000!important;}
-.block-container{max-width:980px;padding:0 2rem 7.5rem;}
-[data-testid="stSidebar"]{background:#050505;border-right:1px solid #1f1f1f;min-width:270px!important;max-width:270px!important;}
+header[data-testid="stHeader"]{background:transparent!important;height:0!important;visibility:hidden!important;}
+[data-testid="collapsedControl"], [data-testid="stSidebarCollapsedControl"], button[kind="header"]{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}
+.block-container{max-width:980px;padding:0 2rem 7.5rem;margin-left:292px!important;}
+/* Fixed sidebar: always visible, no collapse behavior */
+[data-testid="stSidebar"]{background:#050505!important;border-right:1px solid #1f1f1f!important;min-width:292px!important;max-width:292px!important;width:292px!important;display:block!important;visibility:visible!important;opacity:1!important;position:fixed!important;left:0!important;top:0!important;bottom:0!important;height:100vh!important;transform:translateX(0)!important;z-index:1000!important;overflow-y:auto!important;}
+[data-testid="stSidebar"][aria-expanded="false"]{margin-left:0!important;transform:translateX(0)!important;min-width:292px!important;max-width:292px!important;width:292px!important;visibility:visible!important;display:block!important;}
+[data-testid="stAppViewContainer"]{margin-left:0!important;}
+[data-testid="stMain"]{margin-left:0!important;}
 [data-testid="stSidebar"] *{color:var(--text);} 
 [data-testid="stSidebar"] section{padding-top:.4rem!important;}
 .sidebar-title{font-size:20px;font-weight:700;margin:8px 0 18px;color:#fff;}
@@ -68,15 +72,14 @@ header[data-testid="stHeader"]{background:rgba(0,0,0,0)!important;visibility:vis
 .workspace-item:hover{background:#202020;}
 .project-item{display:flex;gap:10px;align-items:center;color:#f4f4f4;font-size:14px;padding:8px 12px;border-radius:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .project-item:hover{background:#202020;}
-.user-chip{position:fixed;bottom:14px;left:12px;width:246px;border-top:1px solid #202020;padding-top:10px;color:#dcdcdc;font-size:13px;}
+.user-chip{position:fixed;bottom:14px;left:12px;width:262px;border-top:1px solid #202020;padding-top:10px;color:#dcdcdc;font-size:13px;}
 [data-testid="stSidebar"] .stButton button{width:100%;height:40px;border-radius:10px;border:0;background:#2f2f2f;color:#fff;font-weight:500;text-align:left;}
 [data-testid="stSidebar"] .stButton button:hover{background:#3a3a3a;}
 [data-testid="stSidebar"] .stRadio > label,[data-testid="stSidebar"] .stSelectbox > label,[data-testid="stSidebar"] .stTextInput > label{color:#8f8f8f!important;font-size:12px!important;font-weight:650!important;}
 [data-testid="stSelectbox"] div[data-baseweb="select"] > div,[data-testid="stTextInput"] input{background:#111!important;border:1px solid #242424!important;border-radius:10px!important;color:#fff!important;min-height:40px;}
 [data-testid="stExpander"]{background:#080808!important;border:1px solid #222!important;border-radius:10px!important;overflow:hidden;}
-/* Hide Streamlit cloud chrome/noise while keeping sidebar collapse control */
+/* Hide Streamlit cloud chrome/noise */
 [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stDeployButton, .viewerBadge_container__1QSob, .viewerBadge_link__1S137 {display:none!important; visibility:hidden!important;}
-header[data-testid="stHeader"]{height:2.4rem!important;background:#000!important;}
 [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label{padding:4px 0!important;}
 .workspace-select-note{color:#777;font-size:12px;line-height:1.45;margin:6px 0 14px;}
 
@@ -93,10 +96,10 @@ header[data-testid="stHeader"]{height:2.4rem!important;background:#000!important
 /* ChatGPT-style fixed composer: full, clean, no tiny input card */
 [data-testid="stChatInput"]{
   position:fixed!important;
-  left:270px!important;
+  left:292px!important;
   right:0!important;
   bottom:0!important;
-  width:calc(100vw - 270px)!important;
+  width:calc(100vw - 292px)!important;
   background:linear-gradient(180deg,rgba(0,0,0,0),#000 22%,#000 100%)!important;
   padding:22px 24px 28px!important;
   z-index:999!important;
@@ -128,12 +131,13 @@ header[data-testid="stHeader"]{height:2.4rem!important;background:#000!important
 .notice-slim{position:fixed;right:18px;bottom:10px;color:#6f6f6f;font-size:11px;z-index:999;}
 .stMarkdown a{color:#d1d5db;}button[kind="secondary"]{border-radius:10px!important;}
 @media(max-width:900px){
-  [data-testid="stSidebar"]{min-width:230px!important;max-width:230px!important;}
-  .block-container{padding:0 .9rem 7rem;max-width:100%;}
+  /* On small screens keep sidebar visible but narrower, as requested. */
+  [data-testid="stSidebar"], [data-testid="stSidebar"][aria-expanded="false"]{min-width:232px!important;max-width:232px!important;width:232px!important;transform:translateX(0)!important;}
+  .block-container{padding:0 .9rem 7rem;max-width:100%;margin-left:232px!important;}
   .landing{min-height:68vh;}.landing h1{font-size:22px;margin-bottom:28px;}
   .message-row{gap:10px;margin:20px 0;}.bubble{font-size:14px;max-width:100%;}
   .notice-slim{display:none;}.user-chip{display:none;}
-  [data-testid="stChatInput"]{left:0!important;width:100vw!important;padding:16px 14px 22px!important;}
+  [data-testid="stChatInput"]{left:232px!important;width:calc(100vw - 232px)!important;padding:16px 14px 22px!important;}
   [data-testid="stChatInput"] > div{width:100%!important;min-width:0!important;max-width:100%!important;}
 }
 @media(min-width:901px) and (max-width:1180px){
