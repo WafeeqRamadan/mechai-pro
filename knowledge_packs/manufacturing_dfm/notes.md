@@ -1,0 +1,14 @@
+# Manufacturing / DFM Knowledge Pack
+
+## Core references
+- Kalpakjian: Manufacturing Engineering and Technology
+- SME Manufacturing Engineering Handbook
+- Boothroyd Dewhurst DFA/DFM methodology
+- Injection molding design guides
+- Sheet metal and machining design guides
+
+## Engineering rules
+- Match geometry to manufacturing process capability.
+- Avoid unnecessary tight tolerances.
+- Consider tooling, cycle time, scrap, inspection, assembly, and repeatability.
+- Design for production stability, not prototype success only.

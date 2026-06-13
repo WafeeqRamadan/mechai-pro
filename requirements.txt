@@ -1,4 +1,1 @@
-streamlit
-openai
-google-genai
-PyPDF2
+streamlit>=1.36

@@ -1,191 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-MechAI Pro v16 — Fixed Sidebar Minimal UI
-ChatGPT-like minimal interface with an always-visible fixed sidebar and workspace selector.
+MechAI Pro v20 — Clean Internal Knowledge-Only Build
+No OpenAI, no Gemini, no external AI provider UI.
+Primary reference brain: bundled knowledge_packs.
 Run: streamlit run app.py
 """
-import os, json, re, math, html
-from datetime import datetime
+from __future__ import annotations
+
+import re
 from pathlib import Path
-from typing import Dict, List
+from dataclasses import dataclass
+from typing import Dict, List, Tuple
 
 import streamlit as st
 
-try:
-    from openai import OpenAI
-except Exception:
-    OpenAI = None
-
-try:
-    from google import genai
-except Exception:
-    genai = None
-
-try:
-    import PyPDF2
-except Exception:
-    PyPDF2 = None
-
+BUILD_ID = "V20_INTERNAL_ONLY_CLEAN_REPO_2026_06_11"
 APP_DIR = Path(__file__).parent
-PROJECTS_DIR = APP_DIR / "projects"
-LOCAL_SAVE_ENABLED = os.getenv("MECHAI_ENABLE_LOCAL_SAVE", "false").strip().lower() == "true"
-if LOCAL_SAVE_ENABLED:
-    PROJECTS_DIR.mkdir(exist_ok=True)
-
-st.set_page_config(
-    page_title="MechAI Pro",
-    page_icon="⚙️",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-# -----------------------------------------------------------------------------
-# CSS — fixed sidebar + near-ChatGPT exact minimal black UI
-# -----------------------------------------------------------------------------
-st.markdown(r"""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-:root{
-  --bg:#000000;--sidebar:#050505;--surface:#212121;--surface2:#2f2f2f;--hover:#2a2a2a;
-  --text:#f4f4f4;--muted:#b4b4b4;--faint:#858585;--line:#242424;--green:#22c55e;--amber:#fbbf24;
-}
-html,body,[class*="css"]{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;}
-.stApp{background:#000;color:var(--text);}
-#MainMenu, footer{visibility:hidden;height:0;}
-header[data-testid="stHeader"]{background:transparent!important;height:0!important;visibility:hidden!important;}
-[data-testid="collapsedControl"], [data-testid="stSidebarCollapsedControl"], button[kind="header"]{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}
-.block-container{max-width:980px;padding:0 2rem 7.5rem;margin-left:292px!important;}
-/* Fixed sidebar: always visible, no collapse behavior */
-[data-testid="stSidebar"]{background:#050505!important;border-right:1px solid #1f1f1f!important;min-width:292px!important;max-width:292px!important;width:292px!important;display:block!important;visibility:visible!important;opacity:1!important;position:fixed!important;left:0!important;top:0!important;bottom:0!important;height:100vh!important;transform:translateX(0)!important;z-index:1000!important;overflow-y:auto!important;}
-[data-testid="stSidebar"][aria-expanded="false"]{margin-left:0!important;transform:translateX(0)!important;min-width:292px!important;max-width:292px!important;width:292px!important;visibility:visible!important;display:block!important;}
-[data-testid="stAppViewContainer"]{margin-left:0!important;}
-[data-testid="stMain"]{margin-left:0!important;}
-[data-testid="stSidebar"] *{color:var(--text);} 
-[data-testid="stSidebar"] section{padding-top:.4rem!important;}
-.sidebar-title{font-size:20px;font-weight:700;margin:8px 0 18px;color:#fff;}
-.nav-btn{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;color:#f4f4f4;font-size:14px;margin:2px 0;}
-.nav-btn.active{background:#2f2f2f;}
-.nav-btn:hover{background:#202020;}
-.side-label{color:#8f8f8f;font-weight:700;font-size:12px;margin:22px 0 8px;}
-.workspace-item{display:flex;gap:10px;align-items:center;color:#f4f4f4;font-size:14px;padding:8px 12px;border-radius:8px;margin:2px 0;}
-.workspace-item.active{background:#2f2f2f;}
-.workspace-item:hover{background:#202020;}
-.project-item{display:flex;gap:10px;align-items:center;color:#f4f4f4;font-size:14px;padding:8px 12px;border-radius:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.project-item:hover{background:#202020;}
-.user-chip{position:fixed;bottom:14px;left:12px;width:262px;border-top:1px solid #202020;padding-top:10px;color:#dcdcdc;font-size:13px;}
-[data-testid="stSidebar"] .stButton button{width:100%;height:40px;border-radius:10px;border:0;background:#2f2f2f;color:#fff;font-weight:500;text-align:left;}
-[data-testid="stSidebar"] .stButton button:hover{background:#3a3a3a;}
-[data-testid="stSidebar"] .stRadio > label,[data-testid="stSidebar"] .stSelectbox > label,[data-testid="stSidebar"] .stTextInput > label{color:#8f8f8f!important;font-size:12px!important;font-weight:650!important;}
-[data-testid="stSelectbox"] div[data-baseweb="select"] > div,[data-testid="stTextInput"] input{background:#111!important;border:1px solid #242424!important;border-radius:10px!important;color:#fff!important;min-height:40px;}
-[data-testid="stExpander"]{background:#080808!important;border:1px solid #222!important;border-radius:10px!important;overflow:hidden;}
-/* Hide Streamlit cloud chrome/noise */
-[data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stDeployButton, .viewerBadge_container__1QSob, .viewerBadge_link__1S137 {display:none!important; visibility:hidden!important;}
-[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label{padding:4px 0!important;}
-.workspace-select-note{color:#777;font-size:12px;line-height:1.45;margin:6px 0 14px;}
-
-.status-ok{color:var(--green);font-weight:650;font-size:12px;margin:8px 0;}.status-warn{color:var(--amber);font-weight:650;font-size:12px;margin:8px 0;}
-.landing{min-height:72vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
-.landing h1{font-size:24px;line-height:1.25;font-weight:400;letter-spacing:-.015em;margin:0 0 36px;color:#f4f4f4;}
-.message-row{display:flex;gap:16px;margin:26px auto;align-items:flex-start;max-width:820px;}
-.avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:14px;flex:0 0 auto;}
-.avatar.user{background:#7c3aed;color:#fff;}.avatar.ai{background:#1f1f1f;color:#f1f1f1;border:1px solid #333;}
-.bubble{max-width:760px;line-height:1.75;font-size:15px;color:#f3f3f3;}.bubble.user{padding-top:5px;font-weight:500;}.bubble.ai{padding-top:2px;}
-.agent-tag{display:inline-flex;color:#888;font-size:12px;margin-bottom:8px;}
-.about-card{background:transparent;border:0;padding:24px;line-height:1.75;max-width:760px;margin:90px auto 0;color:#e8e8e8;}.about-card h2{font-size:26px;margin-top:0;font-weight:500;}
-.footer-line{display:none;}
-/* ChatGPT-style fixed composer: full, clean, no tiny input card */
-[data-testid="stChatInput"]{
-  position:fixed!important;
-  left:292px!important;
-  right:0!important;
-  bottom:0!important;
-  width:calc(100vw - 292px)!important;
-  background:linear-gradient(180deg,rgba(0,0,0,0),#000 22%,#000 100%)!important;
-  padding:22px 24px 28px!important;
-  z-index:999!important;
-}
-[data-testid="stChatInput"] > div{
-  width:min(760px, calc(100vw - 340px))!important;
-  max-width:760px!important;
-  min-width:520px!important;
-  margin:0 auto!important;
-}
-[data-testid="stChatInput"] form,
-[data-testid="stChatInput"] div[data-testid="stChatInputContainer"],
-[data-testid="stChatInput"] div[data-testid="stChatInputTextArea"]{
-  width:100%!important;
-  max-width:760px!important;
-}
-[data-testid="stChatInput"] textarea{
-  width:100%!important;
-  border-radius:28px!important;
-  border:1px solid #3a3a3a!important;
-  background:#212121!important;
-  color:#fff!important;
-  min-height:56px!important;
-  box-shadow:none!important;
-  padding-left:18px!important;
-  font-size:15px!important;
-}
-[data-testid="stChatInput"] button{background:#f4f4f4!important;color:#000!important;border-radius:999px!important;}
-.notice-slim{position:fixed;right:18px;bottom:10px;color:#6f6f6f;font-size:11px;z-index:999;}
-.stMarkdown a{color:#d1d5db;}button[kind="secondary"]{border-radius:10px!important;}
-@media(max-width:900px){
-  /* On small screens keep sidebar visible but narrower, as requested. */
-  [data-testid="stSidebar"], [data-testid="stSidebar"][aria-expanded="false"]{min-width:232px!important;max-width:232px!important;width:232px!important;transform:translateX(0)!important;}
-  .block-container{padding:0 .9rem 7rem;max-width:100%;margin-left:232px!important;}
-  .landing{min-height:68vh;}.landing h1{font-size:22px;margin-bottom:28px;}
-  .message-row{gap:10px;margin:20px 0;}.bubble{font-size:14px;max-width:100%;}
-  .notice-slim{display:none;}.user-chip{display:none;}
-  [data-testid="stChatInput"]{left:232px!important;width:calc(100vw - 232px)!important;padding:16px 14px 22px!important;}
-  [data-testid="stChatInput"] > div{width:100%!important;min-width:0!important;max-width:100%!important;}
-}
-@media(min-width:901px) and (max-width:1180px){
-  [data-testid="stChatInput"] > div{width:min(720px, calc(100vw - 320px))!important;min-width:420px!important;}
-}
-</style>
-""", unsafe_allow_html=True)
-
-# -----------------------------------------------------------------------------
-# Text / Agents / Reference Brain
-# -----------------------------------------------------------------------------
-TEXT = {
-    "English": {
-        "input":"Ask anything engineering…",
-        "title":"What would you like to engineer today?",
-        "subtitle":"Ask once. MechAI routes to the right engineering specialist and builds a structured answer.",
-        "notice":"⚠️ Demo notice: MechAI Pro is an engineering copilot prototype. It does not replace professional engineering verification, certified calculations, CAD/FEA/CFD validation, code compliance, or safety review. Public version is session-only; do not upload confidential files.",
-        "about_title":"About MechAI Pro",
-        "about":"MechAI Pro is a public mechanical engineering AI copilot demo. It routes questions to specialist engineering agents, uses uploaded references within the current session, and can call OpenAI/ChatGPT as the primary provider with Gemini as backup. Treat all outputs as preliminary engineering assistance and verify them before use.",
-        "clear":"Clear chat", "new":"New project", "session":"Session-only public demo. Chats and uploads are not permanently saved.",
-        "connected":"connected", "missing":"key missing",
-        "prompt_lib":"Prompt Library / مكتبة الأوامر",
-        "footer":"MechAI Pro · Public Demo · Mechanical Engineering AI Copilot · Verify all outputs before engineering use",
-    },
-    "العربية": {
-        "input":"اسأل أي شيء هندسي…",
-        "title":"ماذا تريد أن تصمم أو تحلل اليوم؟",
-        "subtitle":"اكتب طلبك مرة واحدة، وسيتم توجيهه للوكيل الهندسي المناسب لإنتاج إجابة منظمة.",
-        "notice":"⚠️ تنبيه: MechAI Pro نموذج أولي لمساعد هندسي. لا يغني عن المراجعة الهندسية الاحترافية، الحسابات المعتمدة، تحقق CAD/FEA/CFD، الالتزام بالكود، أو مراجعة السلامة. النسخة العامة مؤقتة؛ لا ترفع ملفات سرية.",
-        "about_title":"حول MechAI Pro",
-        "about":"MechAI Pro هو نموذج عام لمساعد ذكاء اصطناعي هندسي ميكانيكي. يوجّه الأسئلة لوكلاء متخصصين، ويستخدم المراجع المرفوعة خلال الجلسة الحالية فقط، ويدعم OpenAI/ChatGPT كمزود أساسي مع Gemini كاحتياطي. جميع النتائج مبدئية ويجب التحقق منها هندسيًا قبل الاستخدام.",
-        "clear":"مسح المحادثة", "new":"مشروع جديد", "session":"نسخة عامة مؤقتة: لا يتم حفظ المحادثات والملفات بشكل دائم.",
-        "connected":"متصل", "missing":"المفتاح غير موجود",
-        "prompt_lib":"Prompt Library / مكتبة الأوامر",
-        "footer":"MechAI Pro · نسخة عامة · مساعد ذكاء اصطناعي للهندسة الميكانيكية · تحقق من جميع النتائج قبل الاستخدام الهندسي",
-    },
-}
-
-AGENTS = {
-    "chief": ("🧠 Chief Engineer", "Coordinates design, materials, DFM, simulation, and validation."),
-    "mechanical": ("🔧 Mechanical Design", "Concepts, mechanisms, loads, sizing, fits, GD&T."),
-    "solidworks": ("🧩 SolidWorks CAD", "VBA macros, API automation, drawings, DXF/STEP/BOM."),
-    "fea": ("📊 FEA Simulation", "ANSYS/SolidWorks Simulation setup, mesh, BCs, convergence."),
-    "cfd": ("🌊 CFD & Thermal", "Fluent/Flow Simulation, domains, y+, turbulence, pressure drop."),
-    "manufacturing": ("🏭 Manufacturing DFM/DFA", "Process selection, cost-down, assembly, FMEA."),
-    "materials": ("🧪 Materials", "Material selection, substitutions, datasheet interpretation."),
-    "patent": ("💡 Invention & Patent", "Novelty, prior art framing, claims, prototype plan."),
-}
+KNOWLEDGE_DIR = APP_DIR / "knowledge_packs"
 
 WORKSPACES = {
     "chief": "🧠 General engineering",
@@ -198,381 +29,351 @@ WORKSPACES = {
     "patent": "💡 Innovation / Patent",
 }
 
-WORKSPACE_AGENT_HINT = {
-    "chief": "Use automatic routing from the user's question.",
-    "mechanical": "Bias the answer toward product R&D, mechanisms, sizing, GD&T, and mechanical design decisions.",
-    "solidworks": "Bias the answer toward CAD automation, SolidWorks API/VBA, drawings, BOM, DXF/STEP workflows.",
-    "fea": "Bias the answer toward ANSYS/SolidWorks Simulation, boundary conditions, mesh, convergence, and result checks.",
-    "cfd": "Bias the answer toward CFD, Fluent, Flow Simulation, turbulence, y+, pressure drop, and thermal-fluid validation.",
-    "manufacturing": "Bias the answer toward DFM/DFA, process selection, cost-down, FMEA, tooling, assembly, and manufacturing risk.",
-    "materials": "Bias the answer toward material selection, substitutions, datasheets, Ashby method, strength, temperature, and cost.",
-    "patent": "Bias the answer toward invention analysis, novelty, prototype planning, prior-art thinking, and patent-friendly wording.",
+WORKSPACE_TO_PACK = {
+    "chief": "",
+    "mechanical": "mechanical_design",
+    "solidworks": "cad_solidworks",
+    "fea": "simulation_fea",
+    "cfd": "cfd_thermal",
+    "manufacturing": "manufacturing_dfm",
+    "materials": "materials_selection",
+    "patent": "innovation_patent",
 }
 
-REFERENCE_BRAIN = {
-    "mechanical": ["Shigley’s Mechanical Engineering Design", "Roark’s Formulas for Stress and Strain", "Machinery’s Handbook", "ASME Y14.5 GD&T"],
-    "materials": ["Ashby Materials Selection", "ASM Handbook", "MatWeb-style datasheet reasoning", "CES material selection methodology"],
-    "manufacturing": ["Kalpakjian Manufacturing Engineering", "SME Manufacturing Engineering Handbook", "Boothroyd Dewhurst DFA logic", "Injection molding and sheet-metal design guides"],
-    "fea": ["ANSYS Mechanical Theory Reference", "Practical Finite Element Analysis", "Cook FEA Concepts", "Mesh convergence and verification practices"],
-    "cfd": ["Versteeg & Malalasekera CFD", "ANSYS Fluent Theory Guide", "Fox & McDonald Fluid Mechanics", "Incropera Heat Transfer"],
-    "solidworks": ["SolidWorks API Help", "VBA macro automation patterns", "Design tables/configurations", "Drawing/BOM automation methods"],
-    "patent": ["Patent claim structure", "Prior-art differentiation", "PCT strategy", "Prototype evidence planning"],
+PACK_TITLES = {
+    "mechanical_design": "Mechanical Design",
+    "cad_solidworks": "CAD / SolidWorks",
+    "simulation_fea": "Simulation / FEA",
+    "cfd_thermal": "CFD / Thermal",
+    "manufacturing_dfm": "Manufacturing / DFM",
+    "materials_selection": "Materials Selection",
+    "innovation_patent": "Innovation / Patent",
 }
 
-SYSTEM_BASE = """You are MechAI Pro, a senior mechanical engineering copilot. Answer like a practical expert engineer.
-Always structure engineering answers with: assumptions, calculations/checks if relevant, design risks, recommended next action.
-Never pretend you performed real FEA/CFD/CAD execution unless the user provided actual solver output or a connected bridge executed it.
-Use SI units by default and flag missing inputs.
+INTENT_KEYWORDS = {
+    "mechanical": ["design", "shaft", "bearing", "spring", "gear", "stress", "fatigue", "load", "safety factor", "tolerance", "gd&t", "mechanism", "bracket", "housing"],
+    "solidworks": ["solidworks", "macro", "vba", "api", "part", "assembly", "drawing", "bom", "step", "dxf", "sketch", "feature", "extrude", "cad"],
+    "fea": ["fea", "simulation", "ansys", "static", "modal", "buckling", "mesh", "boundary", "contact", "convergence", "finite element"],
+    "cfd": ["cfd", "fluent", "flow", "thermal", "heat", "pressure drop", "reynolds", "turbulence", "y+", "convection", "fluid", "pipe"],
+    "manufacturing": ["dfm", "dfa", "manufacturing", "injection", "molding", "moulding", "machining", "sheet metal", "tooling", "cycle time", "scrap", "assembly", "cost"],
+    "materials": ["material", "materials", "ashby", "asm", "steel", "aluminum", "plastic", "abs", "pc", "pp", "nylon", "strength", "stiffness", "density", "corrosion", "datasheet"],
+    "patent": ["patent", "prior art", "claim", "innovation", "invention", "triz", "novelty", "prototype", "wipo", "uspto"],
+}
+
+DEFAULT_PACKS: Dict[str, Dict[str, List[str]]] = {
+    "mechanical_design": {
+        "refs": ["Shigley's Mechanical Engineering Design", "Roark's Formulas for Stress and Strain", "Machinery's Handbook", "ASME Y14.5 GD&T principles", "NASA Systems Engineering Handbook"],
+        "rules": ["Define loads, constraints, materials, environment, safety factor, and validation method.", "Check manufacturability, tolerance stack-up, failure modes, and test plan before final design.", "Use hand calculations as sanity checks before simulation."],
+    },
+    "cad_solidworks": {
+        "refs": ["SolidWorks API Help", "SolidWorks VBA macro examples", "Engineering drawing standards", "STEP/DXF export practices"],
+        "rules": ["Prefer parametric, editable CAD models.", "Separate geometry creation, features, drawings, BOM, and exports.", "Warn before destructive macros or file overwrites."],
+    },
+    "simulation_fea": {
+        "refs": ["ANSYS Theory Reference", "NAFEMS verification and validation principles", "Cook: Concepts and Applications of Finite Element Analysis", "Practical FEA best practices"],
+        "rules": ["Define the simulation objective before setup.", "Check load paths, constraints, contacts, mesh quality, and convergence.", "Validate FEA with hand calculations, test data, or benchmark cases."],
+    },
+    "cfd_thermal": {
+        "refs": ["Versteeg and Malalasekera: An Introduction to CFD", "ANSYS Fluent Theory Guide", "Incropera: Fundamentals of Heat and Mass Transfer", "Fox and McDonald: Fluid Mechanics", "White: Fluid Mechanics"],
+        "rules": ["Identify flow regime using Reynolds number before model selection.", "Check boundary conditions, mesh quality, y plus, convergence, and conservation balances.", "Validate CFD with analytical estimates or experimental data."],
+    },
+    "manufacturing_dfm": {
+        "refs": ["Kalpakjian: Manufacturing Engineering and Technology", "SME Manufacturing Engineering Handbook", "Boothroyd Dewhurst DFA/DFM methodology", "Injection molding design guides", "Sheet metal and machining design guides"],
+        "rules": ["Match geometry to manufacturing process capability.", "Avoid unnecessary tight tolerances.", "Consider tooling, cycle time, scrap, inspection, assembly, and repeatability.", "Design for production stability, not prototype success only."],
+    },
+    "materials_selection": {
+        "refs": ["Ashby: Materials Selection in Mechanical Design", "ASM Handbooks", "Supplier datasheets", "MatWeb-style material datasheet reasoning"],
+        "rules": ["Start from functional requirements, not material preference.", "Compare stiffness, strength, toughness, density, thermal limits, corrosion, process compatibility, cost, and availability.", "Never select a material from strength alone.", "Always check manufacturing compatibility and supplier availability."],
+    },
+    "innovation_patent": {
+        "refs": ["TRIZ methodology", "WIPO prior-art search approach", "USPTO classification logic", "Prototype validation planning", "Patent claim drafting checklists"],
+        "rules": ["Separate novelty, usefulness, manufacturability, and commercial value.", "Search prior art before heavy development investment.", "Convert ideas into testable claims and prototype requirements.", "Avoid giving legal certainty without patent attorney review."],
+    },
+}
+
+@dataclass
+class SearchHit:
+    pack: str
+    title: str
+    source: str
+    score: float
+    rules: List[str]
+    refs: List[str]
+
+
+def seed_knowledge_packs() -> None:
+    KNOWLEDGE_DIR.mkdir(exist_ok=True)
+    for pack, data in DEFAULT_PACKS.items():
+        folder = KNOWLEDGE_DIR / pack
+        folder.mkdir(parents=True, exist_ok=True)
+        notes = folder / "notes.md"
+        if not notes.exists():
+            text = f"# {PACK_TITLES[pack]} Knowledge Pack\n\n## Core references\n"
+            text += "\n".join(f"- {x}" for x in data["refs"])
+            text += "\n\n## Engineering rules\n"
+            text += "\n".join(f"- {x}" for x in data["rules"])
+            text += "\n"
+            notes.write_text(text, encoding="utf-8")
+
+
+def extract_list_after_heading(text: str, heading: str) -> List[str]:
+    pattern = re.compile(rf"##\s*{re.escape(heading)}\s*(.*?)(?=\n##\s|\Z)", re.S | re.I)
+    match = pattern.search(text)
+    if not match:
+        return []
+    items: List[str] = []
+    for line in match.group(1).splitlines():
+        line = line.strip()
+        if line.startswith("-"):
+            items.append(line.lstrip("- ").strip())
+    return items
+
+
+def route_workspace(question: str, selected: str) -> str:
+    q = question.lower()
+    scores = {k: 0 for k in INTENT_KEYWORDS}
+    for key, words in INTENT_KEYWORDS.items():
+        for w in words:
+            if w in q:
+                scores[key] += 2 if len(w) > 4 else 1
+    best = max(scores, key=scores.get)
+    if scores[best] > 0:
+        return best
+    return selected or "chief"
+
+
+def load_pack(pack: str) -> Tuple[List[str], List[str], str]:
+    path = KNOWLEDGE_DIR / pack / "notes.md"
+    if not path.exists():
+        return [], [], str(path)
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    return extract_list_after_heading(text, "Engineering rules"), extract_list_after_heading(text, "Core references"), str(path)
+
+
+def search_internal(question: str, selected_workspace: str, top_k: int = 3) -> Tuple[str, List[SearchHit]]:
+    routed = route_workspace(question, selected_workspace)
+    preferred = WORKSPACE_TO_PACK.get(routed, "")
+    q_tokens = set(re.findall(r"[a-zA-Z0-9+]+", question.lower()))
+    hits: List[SearchHit] = []
+    for pack in PACK_TITLES:
+        rules, refs, source = load_pack(pack)
+        blob = " ".join([pack, PACK_TITLES[pack], *rules, *refs]).lower()
+        score = float(sum(1 for t in q_tokens if t and t in blob))
+        if pack == preferred:
+            score += 8.0
+        if score > 0:
+            hits.append(SearchHit(pack=pack, title=PACK_TITLES[pack], source=source, score=score, rules=rules, refs=refs))
+    hits.sort(key=lambda h: h.score, reverse=True)
+    return routed, hits[:top_k]
+
+
+def source_block(hits: List[SearchHit]) -> str:
+    if not hits:
+        return "**Internal sources used**\n- No internal source matched strongly. Add more documents to `knowledge_packs`."
+    lines = ["**Internal sources used**"]
+    for i, h in enumerate(hits, 1):
+        rel = h.source.replace(str(APP_DIR) + "\\", "").replace(str(APP_DIR) + "/", "")
+        lines.append(f"- [K{i}] {h.title} — `{rel}`")
+    return "\n".join(lines)
+
+
+def answer_from_internal(question: str, selected_workspace: str) -> Tuple[str, str]:
+    routed, hits = search_internal(question, selected_workspace)
+    primary = hits[0] if hits else None
+    rules = primary.rules if primary else []
+    src = source_block(hits)
+
+    if routed == "manufacturing":
+        answer = """
+**Internal Knowledge Only — Manufacturing / DFM starting review**
+
+For an injection-molded plastic cover, treat this as a preliminary DFM checklist until CAD geometry, material, target volume, cosmetic requirements, and production process details are known.
+
+**Assumptions to confirm**
+- Part role: cosmetic cover, protective enclosure, or load-bearing cover.
+- Material family: ABS, PP, PC, PA, or blend; this affects shrinkage, wall thickness, heat resistance, and impact performance.
+- Production volume, surface class, assembly method, and expected environment.
+
+**DFM checks**
+1. **Wall thickness:** keep it as uniform as possible; abrupt thickness changes increase sink, warpage, and differential cooling.
+2. **Draft:** add draft on vertical walls, ribs, and bosses so the tool releases cleanly.
+3. **Ribs and bosses:** use ribs for stiffness instead of thick solid sections; avoid over-thick bosses that create sink marks.
+4. **Corners and radii:** use generous internal radii to reduce stress concentration and improve flow.
+5. **Gating and flow:** avoid long thin flow paths and place gates to reduce weld lines in critical or cosmetic zones.
+6. **Tolerances:** avoid tight tolerances unless functionally required; injection molding variation depends on material, mold temperature, and process control.
+7. **Assembly:** design snap fits, screws, heat staking, or clips with tool access and repeatability in mind.
+8. **Validation:** confirm with mold-flow review, prototype checks, dimensional inspection, and assembly testing.
+"""
+    elif routed == "solidworks":
+        answer = """
+**Internal Knowledge Only — CAD / SolidWorks guidance**
+
+Use a parametric workflow: define reference planes, sketches, named dimensions, features, drawing outputs, and export targets separately.
+
+**Recommended approach**
+- Create editable sketches and avoid hard-coded geometry when automation is expected.
+- Separate part creation, drawing creation, BOM extraction, and STEP/DXF export into clear macro sections.
+- Add a safety confirmation before overwriting files or modifying open assemblies.
+"""
+    elif routed == "fea":
+        answer = """
+**Internal Knowledge Only — FEA setup guidance**
+
+Start by defining the engineering decision the simulation must support. A stress plot alone is not enough.
+
+**Minimum FEA checklist**
+- Define load cases, constraints, contacts, material model, and acceptance criteria.
+- Check load paths and whether constraints over-stiffen the structure.
+- Run mesh convergence and compare against hand calculations where possible.
+- Validate the setup before using results for design release.
+"""
+    elif routed == "cfd":
+        answer = """
+**Internal Knowledge Only — CFD / Thermal guidance**
+
+Start with the flow regime and heat-transfer objective before choosing software settings.
+
+**Minimum CFD checklist**
+- Estimate Reynolds number and pressure drop before CFD.
+- Define inlet, outlet, wall, thermal, and symmetry conditions clearly.
+- Check mesh quality, y plus target, inflation layers, residuals, and conservation balances.
+- Validate CFD with analytical estimates or test data.
+"""
+    elif routed == "materials":
+        answer = """
+**Internal Knowledge Only — Materials selection guidance**
+
+Do not select material by strength alone. Begin with functional requirements and manufacturing route.
+
+**Selection checklist**
+- Mechanical: stiffness, yield/ultimate strength, toughness, fatigue, creep.
+- Environmental: temperature, UV, humidity, chemicals, corrosion.
+- Manufacturing: injection molding, machining, forming, welding, joining, availability.
+- Cost: material price, scrap, cycle time, tooling, supplier stability.
+"""
+    elif routed == "patent":
+        answer = """
+**Internal Knowledge Only — Innovation / Patent guidance**
+
+Separate technical novelty from commercial value and manufacturing feasibility.
+
+**Early innovation checklist**
+- Define the problem solved and the exact inventive mechanism.
+- Search prior art before major investment.
+- Convert the idea into prototype requirements and measurable tests.
+- Do not treat this as legal advice; use a patent attorney for filing strategy.
+"""
+    else:
+        answer = """
+**Internal Knowledge Only — Chief Engineer starting point**
+
+I will answer using the internal MechAI knowledge packs first. For a stronger engineering answer, provide geometry, material, loads, manufacturing route, target volume, constraints, and acceptance criteria.
 """
 
-# -----------------------------------------------------------------------------
-# State / persistence
-# -----------------------------------------------------------------------------
-def slugify(name: str) -> str:
-    s = re.sub(r"[^\w\-\s]", "", name.strip(), flags=re.UNICODE)
-    s = re.sub(r"\s+", "_", s)
-    return s[:60] or "Project"
+    if rules:
+        answer += "\n**Internal rules applied**\n" + "\n".join(f"- {r}" for r in rules[:4]) + "\n"
+    answer += "\n" + src
+    answer += "\n\n**Engineering use note:** this is internal guidance, not certified professional engineering verification. Validate assumptions, calculations, standards compliance, and test evidence before release."
+    return routed, answer.strip()
 
-def project_path(name: str) -> Path:
-    return PROJECTS_DIR / slugify(name)
 
-def ensure_project(name: str):
-    if not LOCAL_SAVE_ENABLED:
-        return
-    p = project_path(name); p.mkdir(exist_ok=True)
-    if not (p/"chat.json").exists():
-        (p/"chat.json").write_text("[]", encoding="utf-8")
+def inject_css() -> None:
+    st.markdown("""
+<style>
+:root { --bg:#000; --panel:#050505; --muted:#9b9b9b; --border:#262626; --text:#f5f5f5; }
+html, body, [data-testid="stAppViewContainer"] { background:#000 !important; color:var(--text); }
+[data-testid="stHeader"], [data-testid="stToolbar"], #MainMenu, footer { visibility:hidden !important; height:0 !important; }
+[data-testid="stSidebar"] { background:#000 !important; border-right:1px solid #202020; min-width:300px !important; max-width:300px !important; }
+[data-testid="stSidebar"] * { color:#f4f4f4; }
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { color:#a8a8a8; }
+.stButton > button { border-radius:12px !important; background:#303030 !important; border:1px solid #303030 !important; color:#fff !important; height:46px; }
+.stSelectbox div[data-baseweb="select"] > div { background:#111 !important; border:1px solid #2a2a2a !important; border-radius:12px !important; }
+[data-testid="stExpander"] { background:#030303 !important; border:1px solid #252525 !important; border-radius:12px !important; }
+.block-container { max-width:980px !important; padding-top:2rem !important; padding-bottom:8rem !important; }
+[data-testid="stChatInput"] { background:#101114 !important; border-top:1px solid #151515 !important; }
+[data-testid="stChatInput"] textarea { background:#202020 !important; border-radius:28px !important; color:white !important; }
+.small-muted { color:#8c8c8c; font-size:0.88rem; }
+.version { color:#777; font-size:0.75rem; }
+</style>
+""", unsafe_allow_html=True)
 
-def list_projects():
-    if not LOCAL_SAVE_ENABLED:
-        return st.session_state.get("project_names", ["RD_Lab"])
-    names = [p.name for p in PROJECTS_DIR.iterdir() if p.is_dir()]
-    if not names:
-        ensure_project("RD_Lab"); names = ["RD_Lab"]
-    return sorted(names)
 
-def load_chat(project: str) -> List[Dict]:
-    if not LOCAL_SAVE_ENABLED:
-        return []
-    ensure_project(project)
-    try:
-        return json.loads((project_path(project)/"chat.json").read_text(encoding="utf-8"))
-    except Exception:
-        return []
+st.set_page_config(page_title="MechAI Pro", page_icon="⚙️", layout="wide", initial_sidebar_state="expanded")
+inject_css()
+seed_knowledge_packs()
 
-def save_chat(project: str, messages: List[Dict]):
-    if not LOCAL_SAVE_ENABLED:
-        return
-    ensure_project(project)
-    (project_path(project)/"chat.json").write_text(json.dumps(messages, ensure_ascii=False, indent=2), encoding="utf-8")
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "workspace" not in st.session_state:
+    st.session_state.workspace = "chief"
+if "project" not in st.session_state:
+    st.session_state.project = "RD_Lab"
 
-def get_secret_key(name: str) -> str:
-    try:
-        if hasattr(st, "secrets") and name in st.secrets:
-            return str(st.secrets[name]).strip()
-    except Exception:
-        pass
-    return os.getenv(name, "").strip()
-
-def get_openai_key() -> str:
-    return get_secret_key("OPENAI_API_KEY")
-
-def get_gemini_key() -> str:
-    return get_secret_key("GEMINI_API_KEY")
-
-if "lang" not in st.session_state: st.session_state.lang = "English"
-if "project_names" not in st.session_state: st.session_state.project_names = ["RD_Lab"]
-if "project" not in st.session_state: st.session_state.project = list_projects()[0]
-if "messages" not in st.session_state: st.session_state.messages = load_chat(st.session_state.project)
-if "last_agent" not in st.session_state: st.session_state.last_agent = "chief"
-if "kb_chunks" not in st.session_state: st.session_state.kb_chunks = []
-if "view" not in st.session_state: st.session_state.view = "Chat"
-if "provider" not in st.session_state: st.session_state.provider = "OpenAI / ChatGPT"
-if "workspace" not in st.session_state: st.session_state.workspace = "chief"
-
-# -----------------------------------------------------------------------------
-# Brain
-# -----------------------------------------------------------------------------
-def route_agent(prompt: str) -> str:
-    # If the user selected a specific engineering workspace, keep that specialist
-    # unless the text clearly asks for another hard domain such as SolidWorks/CFD/etc.
-    selected_ws = st.session_state.get("workspace", "chief")
-    q = prompt.lower()
-    rules = [
-        ("solidworks", ["solidworks", "vba", "macro", "swp", "drawing", "bom", "dxf", "step", "cad"]),
-        ("cfd", ["cfd", "fluent", "flow simulation", "reynolds", "turbulence", "pressure drop", "y+", "pipe", "fluid", "thermal flow"]),
-        ("fea", ["fea", "ansys", "simulation", "static structural", "modal", "buckling", "fatigue", "mesh", "stress analysis"]),
-        ("manufacturing", ["dfm", "dfa", "manufacturing", "injection", "molding", "machining", "sheet metal", "cost", "assembly", "fmea"]),
-        ("materials", ["material", "polymer", "steel", "aluminum", "stainless", "ashby", "datasheet", "strength", "temperature"]),
-        ("patent", ["patent", "claim", "prior art", "novelty", "invention", "pct", "prototype"]),
-        ("mechanical", ["shaft", "bearing", "gear", "spring", "mechanism", "tolerance", "gd&t", "load", "torque", "beam"]),
-    ]
-    for agent, keys in rules:
-        if any(k in q for k in keys): return agent
-    return selected_ws if selected_ws != "chief" else "chief"
-
-def extract_pdf_text(file) -> str:
-    if PyPDF2 is None:
-        return ""
-    reader = PyPDF2.PdfReader(file)
-    pages=[]
-    for i,p in enumerate(reader.pages[:80]):
-        try:
-            pages.append(f"[Page {i+1}]\n" + (p.extract_text() or ""))
-        except Exception:
-            pass
-    return "\n".join(pages)
-
-def chunk_text(text: str, size=1400, overlap=180):
-    chunks=[]; i=0
-    while i < len(text):
-        chunks.append(text[i:i+size]); i += max(200, size-overlap)
-    return chunks
-
-def retrieve_chunks(query: str, chunks: List[str], k=4):
-    if not chunks: return []
-    terms = set(re.findall(r"\w+", query.lower()))
-    scored=[]
-    for c in chunks:
-        words = set(re.findall(r"\w+", c.lower()))
-        scored.append((len(terms & words), c))
-    return [c for s,c in sorted(scored, reverse=True)[:k] if s>0]
-
-def local_tool_hint(prompt: str) -> str:
-    q = prompt.lower()
-    if "reynolds" in q:
-        return "Tool available: Reynolds number Re = rho*V*D/mu. Ask for rho, velocity, diameter, viscosity if missing."
-    if "pressure drop" in q:
-        return "Tool available: Darcy-Weisbach ΔP = f*(L/D)*(rho*V²/2). Need pipe length, diameter, velocity/flow, density, viscosity, roughness."
-    if "beam" in q:
-        return "Tool available: simply supported center load: Mmax=P*L/4, sigma=M*c/I, delta=P*L³/(48EI)."
-    if "shaft" in q or "torque" in q:
-        return "Tool available: circular shaft torsion: tau=16T/(πd³), angle=T*L/(J*G), J=πd⁴/32."
-    return ""
-
-def build_prompt(user_prompt: str, agent: str, retrieved: List[str]) -> str:
-    refs = REFERENCE_BRAIN.get(agent, []) + REFERENCE_BRAIN.get("mechanical", [])[:2]
-    ref_txt = "\n".join([f"- {r}" for r in refs])
-    rag_txt = "\n\n".join([f"[PROJECT_REF_{i+1}]\n{c}" for i,c in enumerate(retrieved)])
-    tool = local_tool_hint(user_prompt)
-    agent_name, agent_desc = AGENTS[agent]
-    return f"""{SYSTEM_BASE}
-Current specialist: {agent_name} — {agent_desc}
-Selected workspace: {WORKSPACES.get(st.session_state.get("workspace", "chief"), "General engineering")}
-Workspace guidance: {WORKSPACE_AGENT_HINT.get(st.session_state.get("workspace", "chief"), "Use automatic routing.")}
-Reference brain to emulate as methodology, not copyrighted text:
-{ref_txt}
-
-Project retrieved context:
-{rag_txt if rag_txt else 'No uploaded project reference matched this question.'}
-
-Local engineering tool hint:
-{tool if tool else 'No deterministic calculator selected.'}
-
-User question:
-{user_prompt}
-"""
-
-def call_openai(prompt: str, model_id: str, api_key: str) -> str:
-    if not api_key:
-        return "⚠️ OpenAI API key is missing. Set OPENAI_API_KEY in Streamlit Secrets."
-    if OpenAI is None:
-        return "⚠️ OpenAI SDK is not installed. Run: pip install openai"
-    fallback_models = list(dict.fromkeys([model_id, "gpt-4o-mini", "gpt-4.1-mini"]))
-    errors=[]
-    client = OpenAI(api_key=api_key)
-    for m in fallback_models:
-        try:
-            resp = client.responses.create(
-                model=m,
-                instructions="You are MechAI Pro, a practical senior mechanical engineering copilot. Be precise, structured, and conservative about safety-critical claims.",
-                input=prompt,
-            )
-            txt = getattr(resp, "output_text", None) or str(resp)
-            if m != model_id:
-                return f"_Note: selected OpenAI model was unavailable, so MechAI used `{m}`._\n\n" + txt
-            return txt
-        except Exception as e:
-            errors.append(f"{m}: {e}")
-            msg = str(e).lower()
-            if not any(x in msg for x in ["503", "unavailable", "overloaded", "rate", "429", "not found", "model", "does not exist", "invalid"]):
-                break
-    return "⚠️ OpenAI provider failed. Check API billing/quota/key/model access.\n\nDetails:\n" + "\n".join(errors[-3:])
-
-def call_gemini(prompt: str, model_id: str, api_key: str) -> str:
-    if not api_key:
-        return "⚠️ Gemini API key is missing. Set GEMINI_API_KEY in Streamlit Secrets."
-    if genai is None:
-        return "⚠️ google-genai is not installed. Run: pip install google-genai"
-    fallback_models = list(dict.fromkeys([model_id, "gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-1.5-flash"]))
-    errors=[]
-    client = genai.Client(api_key=api_key)
-    for m in fallback_models:
-        try:
-            resp = client.models.generate_content(model=m, contents=prompt)
-            txt = getattr(resp, "text", None) or str(resp)
-            if m != model_id:
-                return f"_Note: selected Gemini model was busy, so MechAI used `{m}`._\n\n" + txt
-            return txt
-        except Exception as e:
-            errors.append(f"{m}: {e}")
-            msg = str(e).lower()
-            if not any(x in msg for x in ["503", "unavailable", "overloaded", "high demand", "429", "resource_exhausted", "not found", "model"]):
-                break
-    return "⚠️ Gemini provider failed.\n\nDetails:\n" + "\n".join(errors[-3:])
-
-def call_llm(prompt: str, provider: str, model_id: str, openai_key: str, gemini_key: str) -> str:
-    if "Gemini" in provider:
-        primary = call_gemini(prompt, model_id, gemini_key)
-        if primary.startswith("⚠️") and openai_key:
-            return "_Gemini provider failed, so MechAI used OpenAI backup._\n\n" + call_openai(prompt, "gpt-4o-mini", openai_key)
-        return primary
-    primary = call_openai(prompt, model_id, openai_key)
-    if primary.startswith("⚠️") and gemini_key:
-        return "_OpenAI provider failed, so MechAI used Gemini backup._\n\n" + call_gemini(prompt, "gemini-2.5-flash-lite", gemini_key)
-    return primary
-
-# -----------------------------------------------------------------------------
-# Sidebar — ChatGPT-like navigation, minimal
 with st.sidebar:
-    st.markdown('<div class="sidebar-title">MechAI Pro</div>', unsafe_allow_html=True)
-
-    if st.button("✎  New chat", use_container_width=True):
+    st.markdown("## MechAI Pro")
+    if st.button("✎ New chat", use_container_width=True):
         st.session_state.messages = []
-        save_chat(st.session_state.project, [])
         st.rerun()
-
-    st.markdown('<div class="nav-btn">⌕&nbsp;&nbsp;Search chats</div>', unsafe_allow_html=True)
-    st.markdown('<div class="nav-btn">▥&nbsp;&nbsp;Library</div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="side-label">Workspace</div>', unsafe_allow_html=True)
-    ws_keys = list(WORKSPACES.keys())
-    ws_labels = [WORKSPACES[k] for k in ws_keys]
-    current_ws = st.session_state.get("workspace", "chief")
-    ws_label = st.selectbox("Workspace", ws_labels, index=ws_keys.index(current_ws) if current_ws in ws_keys else 0, label_visibility="collapsed")
-    new_ws = ws_keys[ws_labels.index(ws_label)]
-    if new_ws != st.session_state.workspace:
-        st.session_state.workspace = new_ws
-        st.session_state.last_agent = new_ws
-        st.rerun()
-    st.markdown('<div class="workspace-select-note">Pick a workspace only when you want to bias the answer. MechAI still auto-routes from your question.</div>', unsafe_allow_html=True)
-
-    view = st.radio("", ["Chat", "About"], horizontal=True, index=0 if st.session_state.view=="Chat" else 1, label_visibility="collapsed")
-    st.session_state.view = view
-
-    st.markdown('<div class="side-label">Projects</div>', unsafe_allow_html=True)
-    projects = list_projects()
-    selected = st.selectbox("Project", projects, index=projects.index(st.session_state.project) if st.session_state.project in projects else 0, label_visibility="collapsed")
-    if selected != st.session_state.project:
-        st.session_state.project = selected
-        st.session_state.messages = load_chat(selected)
-        st.rerun()
-
+    st.markdown("⌕ Search chats")
+    st.markdown("▥ Library")
+    st.markdown("### Workspace")
+    labels = list(WORKSPACES.values())
+    current_label = WORKSPACES.get(st.session_state.workspace, labels[0])
+    chosen = st.selectbox("Workspace", labels, index=labels.index(current_label), label_visibility="collapsed")
+    st.session_state.workspace = [k for k, v in WORKSPACES.items() if v == chosen][0]
+    st.caption("Workspace biases the internal knowledge search. MechAI still auto-routes from your question.")
+    st.markdown("### View")
+    view = st.radio("View", ["Chat", "About"], horizontal=True, label_visibility="collapsed")
+    st.markdown("### Projects")
+    st.session_state.project = st.selectbox("Project", ["RD_Lab"], label_visibility="collapsed")
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("+ Project", use_container_width=True):
-            new_name = f"Project_{datetime.now().strftime('%H%M')}"
-            if LOCAL_SAVE_ENABLED:
-                ensure_project(new_name)
-            else:
-                st.session_state.project_names.append(new_name)
-            st.session_state.project = new_name
-            st.session_state.messages = []
-            st.rerun()
+        st.button("+ Project", use_container_width=True)
     with c2:
         if st.button("Clear", use_container_width=True):
             st.session_state.messages = []
-            save_chat(st.session_state.project, [])
             st.rerun()
-
-    # Quiet settings: hidden by default to avoid visual noise.
     with st.expander("Settings", expanded=False):
-        lang = st.selectbox("Interface / الواجهة", ["English", "العربية"], index=0 if st.session_state.lang=="English" else 1)
-        st.session_state.lang = lang
-        provider = st.selectbox("AI", ["OpenAI / ChatGPT", "Gemini backup"], index=0 if "OpenAI" in st.session_state.provider else 1)
-        st.session_state.provider = provider
-        openai_key = get_openai_key(); gemini_key = get_gemini_key()
-        if "OpenAI" in provider:
-            st.markdown(f"<div class='{ 'status-ok' if openai_key else 'status-warn'}'>● OpenAI {TEXT[st.session_state.lang]['connected'] if openai_key else TEXT[st.session_state.lang]['missing']}</div>", unsafe_allow_html=True)
-            model_id = st.text_input("Model", value="gpt-4o-mini")
-        else:
-            st.markdown(f"<div class='{ 'status-ok' if gemini_key else 'status-warn'}'>● Gemini {TEXT[st.session_state.lang]['connected'] if gemini_key else TEXT[st.session_state.lang]['missing']}</div>", unsafe_allow_html=True)
-            model_id = st.text_input("Model", value="gemini-2.5-flash-lite")
-        pdfs = st.file_uploader("Upload PDF references", type=["pdf"], accept_multiple_files=True)
-        if pdfs:
-            chunks=[]
-            for f in pdfs:
-                text = extract_pdf_text(f)
-                chunks.extend(chunk_text(text))
-            st.session_state.kb_chunks = chunks
-            st.success(f"Indexed {len(chunks)} chunks for this session.")
+        st.caption("Mode: Internal Knowledge Only")
+        st.caption(f"Internal knowledge packs: {len(PACK_TITLES)}")
+        st.caption("External AI providers are not part of this build.")
+        st.caption(f"Build: {BUILD_ID}")
+    st.markdown("---")
+    st.caption("Wafeeq · MechAI Pro")
 
-    st.markdown('<div class="user-chip">Wafeeq · MechAI Pro</div>', unsafe_allow_html=True)
+if view == "About":
+    st.markdown("# MechAI Pro")
+    st.markdown("""
+**MechAI Pro** is a knowledge-first mechanical engineering copilot.
 
-tr = TEXT[st.session_state.lang]
-openai_key = get_openai_key(); gemini_key = get_gemini_key()
-agent_name = AGENTS.get(st.session_state.last_agent, AGENTS["chief"])[0]
-provider_badge = "OpenAI" if "OpenAI" in st.session_state.provider else "Gemini"
+This clean build does **not** expose OpenAI, ChatGPT, Gemini, or external AI provider controls. The reference brain is the local `knowledge_packs` folder.
 
-# -----------------------------------------------------------------------------
-# Main UI — minimal ChatGPT-style center
-# No header, no top badges, no dashboard. The conversation is the product.
+Current workspaces:
+- Product R&D / Mechanical Design
+- CAD / SolidWorks
+- Simulation / FEA
+- CFD / Thermal
+- Manufacturing / DFM
+- Materials Selection
+- Innovation / Patent
 
-if st.session_state.view == "About":
-    st.markdown(f"""
-    <div class="about-card">
-      <h2>{html.escape(tr['about_title'])}</h2>
-      <p>{html.escape(tr['about'])}</p>
-      <div class="thin-divider"></div>
-      <p><b>Public demo notice:</b> MechAI Pro does not replace professional engineering verification, certified calculations, CAD/FEA/CFD validation, code compliance, or safety review. Do not upload confidential files to the public version.</p>
-    </div>
-    """, unsafe_allow_html=True)
+Use note: outputs are engineering guidance, not certified calculations or compliance approval.
+""")
+    st.stop()
+
+if not st.session_state.messages:
+    st.markdown("<div style='height:25vh'></div>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align:center;font-weight:500'>Good to see you, Wafeeq.</h2>", unsafe_allow_html=True)
 else:
-    if not st.session_state.messages:
-        greeting = "Good to see you, Wafeeq." if st.session_state.lang == "English" else "أهلًا وفيق."
-        st.markdown(f"""
-        <div class="landing">
-          <h1>{greeting}</h1>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        for m in st.session_state.messages:
-            role = m.get("role", "assistant")
-            content = m.get("content", "")
-            a = m.get("agent", "chief")
-            if role == "user":
-                st.markdown(f"""
-                <div class="message-row">
-                  <div class="avatar user">☻</div>
-                  <div class="bubble user">{html.escape(content)}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                label = AGENTS.get(a, AGENTS["chief"])[0]
-                st.markdown(f"""
-                <div class="message-row">
-                  <div class="avatar ai">⚙</div>
-                  <div class="bubble ai"><div class="agent-tag">{html.escape(label)} · {html.escape(provider_badge)}</div>
-                """, unsafe_allow_html=True)
-                st.markdown(content)
-                st.markdown("</div></div>", unsafe_allow_html=True)
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
-    st.markdown(f"<div class='notice-slim'>{html.escape(tr['footer'])}</div>", unsafe_allow_html=True)
-
-# -----------------------------------------------------------------------------
-# Chat input and execution
-# -----------------------------------------------------------------------------
-pending = st.session_state.pop("pending_prompt", None) if "pending_prompt" in st.session_state else None
-user_prompt = pending or st.chat_input(tr["input"])
-
-if user_prompt:
-    agent = route_agent(user_prompt)
-    st.session_state.last_agent = agent
-    retrieved = retrieve_chunks(user_prompt, st.session_state.kb_chunks)
-    prompt = build_prompt(user_prompt, agent, retrieved)
-    st.session_state.messages.append({"role":"user", "content":user_prompt, "time":datetime.now().isoformat(), "agent":agent})
-    with st.spinner("Thinking…"):
-        answer = call_llm(prompt, st.session_state.provider, model_id, openai_key, gemini_key)
-    st.session_state.messages.append({"role":"assistant", "content":answer, "time":datetime.now().isoformat(), "agent":agent})
-    save_chat(st.session_state.project, st.session_state.messages)
+prompt = st.chat_input("Ask anything engineering…")
+if prompt:
+    st.session_state.messages.append({"role":"user", "content":prompt})
+    routed, answer = answer_from_internal(prompt, st.session_state.workspace)
+    agent_label = WORKSPACES.get(routed, "🧠 General engineering")
+    final = f"_{agent_label} · Internal Knowledge Only_\n\n{answer}"
+    st.session_state.messages.append({"role":"assistant", "content":final})
     st.rerun()
