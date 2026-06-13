@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-MechAI Pro v25 — Full Mechanical Engineering OS Core
+MechAI Pro v26 — Engineering Review Board + Quality Hardening
 ====================================================
 Knowledge-first mechanical engineering assistant.
 
@@ -60,7 +60,7 @@ try:
 except Exception:  # pragma: no cover
     Workbook = None
 
-APP_VERSION = "v25_FULL_MECHANICAL_ENGINEERING_OS_2026_06_13"
+APP_VERSION = "v26_ENGINEERING_REVIEW_BOARD_QUALITY_HARDENING_2026_06_13"
 APP_TITLE = "MechAI Pro"
 ROOT = Path(__file__).resolve().parent
 KNOWLEDGE_DIR = ROOT / "knowledge_packs"
@@ -1903,12 +1903,157 @@ def run_quality_tests() -> List[Dict[str, Any]]:
 # Answer builder
 # -----------------------------------------------------------------------------
 
+def input_completeness(frame: ProblemFrame) -> Tuple[int, str]:
+    """Score how much release-critical information is present."""
+    total = max(1, len(frame.missing_inputs) + 5)
+    missing_penalty = min(85, len(frame.missing_inputs) * 8)
+    if frame.material == "not specified":
+        missing_penalty += 8
+    if frame.process == "not specified":
+        missing_penalty += 8
+    if not frame.quantities:
+        missing_penalty += 6
+    score = max(5, min(100, 100 - missing_penalty))
+    if score >= 80:
+        label = "Strong input definition"
+    elif score >= 60:
+        label = "Usable but incomplete"
+    elif score >= 40:
+        label = "Preliminary only"
+    else:
+        label = "Low input maturity"
+    return score, label
+
+
+def evidence_level(sources: List[SourceChunk], calcs: List[CalculationResult], frame: ProblemFrame) -> str:
+    """Simple evidence ladder for engineering governance."""
+    if calcs and len(sources) >= 4 and not frame.missing_inputs:
+        return "Level 4 — internally sourced + calculated + input-complete; still needs test/standard release evidence."
+    if calcs and len(sources) >= 3:
+        return "Level 3 — internally sourced with deterministic checks; missing data still limits release confidence."
+    if len(sources) >= 3:
+        return "Level 2 — internally sourced qualitative assessment; add numbers/calculations for engineering decision."
+    if sources:
+        return "Level 1 — weak internal evidence; expand the relevant knowledge pack or upload legal references."
+    return "Level 0 — no internal evidence retrieved; do not use for engineering decisions."
+
+
+def release_gate(score: int, input_score: int, risks: List[RiskItem]) -> Tuple[str, str]:
+    high_count = sum(1 for r in risks if r.risk == "High")
+    unknown_count = sum(1 for r in risks if r.risk == "Unknown")
+    if score >= 75 and input_score >= 70 and high_count == 0:
+        return "Conditional pass", "Proceed to detailed validation if calculations, standards, CAD and test evidence are completed."
+    if score >= 55 and high_count <= 2:
+        return "Engineering hold", "Do not release yet. Resolve high-risk items and missing release-critical data first."
+    return "Stop / preliminary only", "Treat this as concept-stage guidance only. Release decision is blocked until inputs and validation evidence improve."
+
+
+def engineering_review_board(frame: ProblemFrame, risks: List[RiskItem], calcs: List[CalculationResult]) -> List[Tuple[str, str]]:
+    """Multi-perspective internal review board. It is deterministic, not external AI."""
+    top_high = [r.area for r in risks if r.risk == "High"][:3]
+    unknowns = [r.area for r in risks if r.risk == "Unknown"][:3]
+    reviews: List[Tuple[str, str]] = []
+    if frame.workspace == "Manufacturing / DFM":
+        reviews = [
+            ("Manufacturing reviewer", "Primary release blockers are process capability, tooling strategy, tolerance feasibility and repeatable production stability."),
+            ("Design reviewer", "Geometry must be reviewed for uniform walls, functional ribs/bosses, draft, assembly access and critical-to-quality dimensions."),
+            ("Materials reviewer", "Material family and grade are not optional; shrinkage, stiffness, heat resistance and impact behavior depend on it."),
+            ("Quality reviewer", "Define CTQs, inspection method, first-article checks, defect criteria, and process capability targets before production release."),
+        ]
+    elif frame.workspace == "Simulation / FEA":
+        reviews = [
+            ("FEA reviewer", "Boundary conditions, contacts and mesh convergence are more important than the visual stress plot."),
+            ("Design reviewer", "Confirm load path and acceptance criterion before simulation is used to make a design decision."),
+            ("Validation reviewer", "Hand calculation, benchmark or physical test correlation is required before release."),
+        ]
+    elif frame.workspace == "CFD / Thermal":
+        reviews = [
+            ("CFD reviewer", "Flow regime, boundary conditions, mesh/y+, conservation balance and convergence must be proven."),
+            ("Thermal reviewer", "Heat sources, material conductivity, contact resistances and environmental assumptions must be explicit."),
+            ("Validation reviewer", "Use pressure-drop/heat-transfer correlations or test data as sanity checks."),
+        ]
+    elif frame.workspace == "CAD / SolidWorks":
+        reviews = [
+            ("CAD automation reviewer", "Macro must validate active document type, units, output paths and overwrite policy before execution."),
+            ("Data safety reviewer", "Never run destructive batch automation without backups, logs and a dry-run mode."),
+            ("Manufacturing reviewer", "CAD outputs must support downstream DXF/STEP/drawing/BOM workflows reliably."),
+        ]
+    elif frame.workspace == "Materials Selection":
+        reviews = [
+            ("Materials reviewer", "Screen candidates by functional constraints first, not by habit or availability."),
+            ("Manufacturing reviewer", "Material must be compatible with process window, tooling, supplier availability and cost."),
+            ("Validation reviewer", "Datasheet values need test confirmation for real geometry, environment and aging conditions."),
+        ]
+    else:
+        reviews = [
+            ("Chief mechanical reviewer", "Clarify objective, loads, material, process, constraints, validation method and decision required."),
+            ("Risk reviewer", "Unspecified inputs must be treated as risk, not as assumptions hidden in the answer."),
+        ]
+    if top_high:
+        reviews.append(("Risk escalation", f"Highest-risk areas detected: {', '.join(top_high)}."))
+    if unknowns:
+        reviews.append(("Unknowns escalation", f"Unknown risk areas needing data: {', '.join(unknowns)}."))
+    return reviews
+
+
+def verification_plan(frame: ProblemFrame, risks: List[RiskItem], calcs: List[CalculationResult]) -> List[str]:
+    plan = []
+    if frame.workspace == "Manufacturing / DFM":
+        plan = [
+            "Collect CAD/STEP or drawings with nominal wall thickness, ribs, bosses, gates/ejector constraints and mating parts.",
+            "Define material grade, shrinkage data, target production volume, surface class and CTQ dimensions.",
+            "Run DFM review for sink/warpage, draft, parting line, tooling actions, tolerance capability and assembly method.",
+            "Create first-article inspection checklist and process capability targets for critical dimensions.",
+        ]
+    elif frame.workspace == "Simulation / FEA":
+        plan = [
+            "Freeze simulation objective and pass/fail criterion before meshing.",
+            "Create hand calculation for the dominant load path as a lower-bound sanity check.",
+            "Run mesh convergence on the decision quantity, not just maximum singular stress.",
+            "Document boundary condition sensitivity and validation evidence.",
+        ]
+    elif frame.workspace == "CFD / Thermal":
+        plan = [
+            "Calculate Reynolds number and expected pressure/heat-transfer range before CFD setup.",
+            "Define physical boundary conditions and conservation checks.",
+            "Set mesh/y+ strategy consistent with wall treatment and turbulence model.",
+            "Validate with correlation, test data, or benchmark case.",
+        ]
+    elif frame.workspace == "CAD / SolidWorks":
+        plan = [
+            "Confirm document type, units, naming convention, output folder and overwrite policy.",
+            "Generate macro with validation guards, error handling, logging and non-destructive defaults.",
+            "Test on copied files before production folder execution.",
+            "Record macro version and run instructions in project memory.",
+        ]
+    else:
+        plan = [
+            "Define objective and required engineering decision.",
+            "Collect missing inputs listed below.",
+            "Run deterministic checks when numeric inputs are available.",
+            "Create validation evidence before release.",
+        ]
+    return plan
+
+
 def build_answer(query: str, frame: ProblemFrame, sources: List[SourceChunk], risks: List[RiskItem], calcs: List[CalculationResult], project: str, for_test: bool = False) -> str:
     score, level = risk_score(risks, frame)
+    input_score, input_label = input_completeness(frame)
     score_name = workspace_score_name(frame.workspace)
+    gate, gate_reason = release_gate(score, input_score, risks)
     protocol = REASONING_PROTOCOLS.get(frame.workspace, REASONING_PROTOCOLS["General engineering"])
+    board = engineering_review_board(frame, risks, calcs)
+    verification = verification_plan(frame, risks, calcs)
+    evidence = evidence_level(sources, calcs, frame)
     lines: List[str] = []
-    lines.append(f"### Mechanical Decision Engine v25 — {frame.workspace}")
+    lines.append(f"### Mechanical Engineering Review Board v26 — {frame.workspace}")
+    lines.append("")
+    lines.append("#### Executive engineering judgment")
+    lines.append(f"- **Release gate:** {gate}")
+    lines.append(f"- **Reason:** {gate_reason}")
+    lines.append(f"- **{score_name}:** {score}/100 — {level}")
+    lines.append(f"- **Input maturity:** {input_score}/100 — {input_label}")
+    lines.append(f"- **Evidence level:** {evidence}")
     lines.append("")
     lines.append("#### Problem frame")
     lines.append(f"- Part/component: **{frame.part}**.")
@@ -1919,13 +2064,13 @@ def build_answer(query: str, frame: ProblemFrame, sources: List[SourceChunk], ri
     if frame.concepts:
         lines.append(f"- Key concepts considered: {', '.join(frame.concepts)}.")
     lines.append("")
+    lines.append("#### Engineering review board")
+    for role, note in board:
+        lines.append(f"- **{role}:** {note}")
+    lines.append("")
     lines.append("#### Reasoning protocol applied")
     for i, item in enumerate(protocol, 1):
         lines.append(f"{i}. {item}")
-    lines.append("")
-    lines.append(f"#### {score_name}")
-    lines.append(f"- Score: **{score}/100**")
-    lines.append(f"- Risk/readiness level: **{level}**")
     lines.append("")
     lines.append("#### Risk matrix")
     lines.append("| Area | Risk | Reason | Required data | Recommended action |")
@@ -1933,12 +2078,12 @@ def build_answer(query: str, frame: ProblemFrame, sources: List[SourceChunk], ri
     for r in risks:
         lines.append(f"| {r.area} | {r.risk} | {r.reason} | {r.required_data} | {r.recommended_action} |")
     lines.append("")
-    lines.append("#### Engineering calculators / deterministic validators")
+    lines.append("#### Deterministic calculators / validators")
     if calcs:
         for c in calcs:
             lines.append(f"- **{c.name}** — {c.status}: {c.details}")
     else:
-        lines.append("- No deterministic calculation was possible from the current text. Provide numeric inputs to run calculators.")
+        lines.append("- No deterministic calculation was possible from the current text. Provide numeric inputs to run calculators and validators.")
     lines.append("")
     lines.append("#### Missing inputs before engineering release")
     if frame.missing_inputs:
@@ -1947,6 +2092,10 @@ def build_answer(query: str, frame: ProblemFrame, sources: List[SourceChunk], ri
     else:
         lines.append("- No obvious critical missing inputs detected from this short prompt, but release validation is still required.")
     lines.append("")
+    lines.append("#### Verification plan")
+    for i, step in enumerate(verification, 1):
+        lines.append(f"{i}. {step}")
+    lines.append("")
     lines.append("#### Ranked recommendations")
     recs = ranked_recommendations(frame, risks)
     for i, rec in enumerate(recs, 1):
@@ -1954,14 +2103,14 @@ def build_answer(query: str, frame: ProblemFrame, sources: List[SourceChunk], ri
     lines.append("")
     lines.append("#### Internal retrieval and citations")
     if sources:
-        for i, src in enumerate(sources[:6], 1):
+        for i, src in enumerate(sources[:7], 1):
             conf = "high" if src.score >= 12 else "medium" if src.score >= 6 else "low"
             lines.append(f"- [K{i}] **{src.workspace.replace('_', ' ').title()}** — `{src.source}` — relevance {src.score}, source confidence {conf}.")
     else:
         lines.append("- No matching internal source found. Add legal references or expand the relevant Knowledge Pack.")
     lines.append("")
-    lines.append("#### Engineering use note")
-    lines.append("This is internal guidance, not a certified calculation or standards release. Validate CAD geometry, material data, calculations, simulation assumptions, compliance, and physical test evidence before release.")
+    lines.append("#### Engineering governance note")
+    lines.append("This answer is an internal engineering review aid, not a certified calculation, legal standards release, CAD validation, FEA/CFD validation, or test approval. Engineering release still requires checked calculations, source data, standard compliance, CAD/inspection evidence, and physical or benchmark validation where applicable.")
     return "\n".join(lines)
 
 
@@ -2108,7 +2257,7 @@ with st.sidebar:
 
     with st.expander("Settings", expanded=False):
         st.markdown(f"Mode: **Internal Knowledge Only**")
-        st.markdown(f"Brain: **Mechanical Decision Engine v25**")
+        st.markdown(f"Brain: **Mechanical Decision Engine v26**")
         st.markdown(f"Internal knowledge docs: **{len(list(KNOWLEDGE_DIR.glob('*/*.md')))}**")
         st.markdown(f"Project memory: `{project_dir(st.session_state.project).relative_to(ROOT)}`")
         st.markdown("External AI providers are not part of this build.")
@@ -2177,5 +2326,5 @@ if prompt:
         answer += "\n\n#### CFD artifact generated\n- Fluent journal starter skeleton is available below. Validate domain, mesh, boundary conditions, y+, and convergence.\n"
         downloads.append({"label": "Download Fluent Journal .jou", "data": jou.encode("utf-8"), "file_name": "mechai_fluent_setup.jou", "mime": "text/plain", "key": str(uuid.uuid4())})
     append_memory(st.session_state.project, prompt, answer, frame, risks, calcs, sources)
-    st.session_state.messages.append({"role": "assistant", "content": f"{WORKSPACES[frame.workspace]['icon']} **{frame.agent} · Internal Knowledge Only · Mechanical Engineering OS v25**\n\n" + answer, "downloads": downloads})
+    st.session_state.messages.append({"role": "assistant", "content": f"{WORKSPACES[frame.workspace]['icon']} **{frame.agent} · Internal Knowledge Only · Engineering Review Board v26**\n\n" + answer, "downloads": downloads})
     st.rerun()
