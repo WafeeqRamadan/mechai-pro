@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-MechAI Pro v21 — Mechanical Scientist Brain
+MechAI Pro v22 — Manufacturing / DFM Expert Brain
 - Internal knowledge packs are the primary reference brain.
-- Adds a mechanical reasoning layer: ontology, protocols, retrieval, assumptions, missing data, validation logic.
+- Adds an expert Manufacturing/DFM reasoning layer: process capability, tooling, tolerance, cost, quality, and validation logic.
 - No visible external AI provider UI.
 - Fixed sidebar, minimal ChatGPT-like interface.
 Run: streamlit run app.py
@@ -22,10 +22,10 @@ import streamlit as st
 
 APP_DIR = Path(__file__).parent
 KNOWLEDGE_DIR = APP_DIR / "knowledge_packs"
-BUILD_ID = "V21_MECHANICAL_SCIENTIST_BRAIN_2026_06_13"
+BUILD_ID = "V22_DFM_EXPERT_BRAIN_2026_06_13"
 
 # -----------------------------------------------------------------------------
-# Mechanical Scientist Brain: ontology + protocols
+# Mechanical Scientist Brain v22: ontology + protocols
 # -----------------------------------------------------------------------------
 WORKSPACES = {
     "chief": "🧠 General engineering",
@@ -266,6 +266,113 @@ Rules:
 - Review tolerance stack-up for assemblies.
 - Avoid cosmetic or arbitrary precision requirements.
 - Define inspection method before release.
+""",
+        "injection_molding_expert.md": """# Injection Molding Expert DFM Pack
+
+Concept:
+Injection molding is a coupled design/manufacturing problem. Geometry, material, tooling, cooling, ejection, surface quality, tolerance capability, and production volume must be considered together.
+
+Rules:
+- Confirm material family and grade before final wall thickness, shrinkage, draft, and tolerance decisions.
+- Keep wall thickness uniform; avoid thick masses and abrupt transitions.
+- Add draft to all pull-direction surfaces; textured surfaces need more draft.
+- Use ribs for stiffness instead of thick sections; avoid overly thick rib roots.
+- Core bosses and support them with ribs; avoid isolated thick bosses.
+- Add generous radii to support flow, reduce stress concentration, and improve tool life.
+- Reserve gate, runner, ejector, parting-line, and shutoff strategy before design freeze.
+- Protect cosmetic A-surfaces from gates, ejector pins, sink, weld lines, and parting-line mismatch.
+- Avoid tight plastic tolerances unless tied to functional datums and realistic process capability.
+- Plan prototype, T0/T1 sampling, dimensional inspection, and functional validation.
+
+Decision logic:
+- If wall thickness is unknown, do not approve DFM; request nominal wall map.
+- If material is unknown, identify candidate material family and grade-level risks.
+- If annual volume is low, question whether injection tooling is economically justified.
+- If cosmetic surface is critical, gate/ejector/parting-line placement becomes release-critical.
+
+Failure risks:
+- Sink marks, voids, short shot, weld line weakness, warpage, differential shrinkage, flash, ejection damage, brittle snaps, dimensional drift, high cycle time.
+
+Required inputs:
+- CAD/STEP or image, material grade, nominal wall thickness, surface class, production volume, assembly method, critical dimensions, tolerance requirements, operating environment.
+""",
+        "sheet_metal_expert.md": """# Sheet Metal Expert DFM Pack
+
+Rules:
+- Match bend radius, material thickness, tooling, and material ductility.
+- Keep holes, slots, embosses, and cutouts away from bend lines.
+- Add bend relief where tearing, bulging, or distortion is likely.
+- Minimize bend setups and complex forming directions.
+- Define grain direction, flat pattern, K-factor, finish side, and burr direction.
+- Avoid tight flatness/perpendicularity without process capability evidence.
+
+Decision logic:
+- If bend count is high, review sequence, tooling availability, and accumulated tolerance.
+- If holes are near bends, request hole-to-bend distances and tooling review.
+- If cosmetic finish matters, specify protected face and handling requirements.
+""",
+        "machining_expert.md": """# Machining Expert DFM Pack
+
+Rules:
+- Reduce setups, deep pockets, long-reach tools, thin walls, sharp internal corners, and unnecessary tight tolerances.
+- Prefer standard cutter sizes, standard hole sizes, accessible features, and stable workholding.
+- Define datums that match fixturing and inspection.
+- Separate prototype-friendly machining from production-stable machining.
+- Link surface finish and tolerance to functional requirements.
+
+Cost drivers:
+- Setup count, tool changes, deep cavities, material machinability, tight tolerances, fine surface finish, inspection burden, scrap risk, deburring, and secondary operations.
+""",
+        "assembly_dfa_expert.md": """# Assembly DFA Expert Pack
+
+Rules:
+- Reduce part count and fastener count where function allows.
+- Use self-locating, self-aligning, and mistake-proofed features.
+- Keep assembly direction simple and visible.
+- Avoid hidden fasteners, inaccessible clips, and ambiguous orientation.
+- Design datums, stops, lead-ins, and inspection features into the product.
+- Review serviceability, tool access, and rework risk.
+
+Decision logic:
+- If assembly method is unknown, do not finalize snap fits, bosses, inserts, or fastener strategy.
+- If tolerance stack affects assembly, request datum scheme and critical dimensions.
+""",
+        "tolerance_capability_expert.md": """# Tolerance Capability Expert Pack
+
+Rules:
+- Every tight tolerance must have a functional reason.
+- Match tolerances to process capability, measurement method, and production volume.
+- Review tolerance stack-up for mating parts and assembly function.
+- Avoid mixing cosmetic expectations with functional precision.
+- Define inspection strategy before design release.
+- For plastics, account for shrinkage, moisture, temperature, part aging, and mold cavity variation.
+
+Decision logic:
+- If tolerance is tighter than normal process capability, propose datum change, feature redesign, secondary operation, or inspection plan.
+""",
+        "cost_reduction_expert.md": """# Manufacturing Cost-Down Expert Pack
+
+Rules:
+- Identify cost drivers before suggesting redesign.
+- Reduce material volume, cycle time, setup count, part count, fasteners, inspection effort, and scrap risk.
+- Prefer geometry simplification over late-stage process heroics.
+- Avoid excessive tolerances, secondary operations, and cosmetic requirements without value justification.
+- Consider supplier tooling, standard stock/forms, cavity count, and packaging/handling.
+
+Cost-down levers:
+- Part consolidation, wall-thickness optimization, ribbing instead of mass, simplified tooling, standard fasteners, datum simplification, reduced inspection, common material grades, and fewer finishing operations.
+""",
+        "quality_control_expert.md": """# Manufacturing Quality Control Expert Pack
+
+Rules:
+- Define CTQs: critical-to-quality dimensions, cosmetic zones, functional interfaces, and safety-related checks.
+- Link inspection method to tolerance and production volume.
+- Separate incoming material checks, in-process checks, final inspection, and validation tests.
+- Use control plans for high-volume production.
+- Track defect modes: sink, flash, warpage, short shot, weld-line weakness, burrs, dimensional drift, assembly force, and cosmetic damage.
+
+Validation:
+- Use first article inspection, capability checks, functional tests, environmental exposure, and pilot build feedback before release.
 """,
     },
     "simulation_fea": {
@@ -596,28 +703,42 @@ def missing_block(frame: QueryFrame) -> str:
     return "**Missing data needed for a real engineering decision**\n" + "\n".join(f"- {m}" for m in frame.missing_data)
 
 def compose_dfm_answer(query: str, frame: QueryFrame, hits: List[KnowledgeHit]) -> str:
-    rules = first_rules(hits, "manufacturing_dfm", DEFAULT_PACKS["manufacturing_dfm"]["rules"], 6)
-    material_note = "If the material is ABS/PP/PC/PA, confirm grade-specific shrinkage, heat resistance, impact behavior, and chemical exposure."
+    rules = first_rules(hits, "manufacturing_dfm", DEFAULT_PACKS["manufacturing_dfm"]["rules"], 8)
+    material_note = "Material is unspecified; do not freeze shrinkage, wall thickness, draft, snap-fit behavior, or tolerance assumptions until material family and grade are known."
     if frame.materials:
-        material_note = f"Detected material candidates: {', '.join(frame.materials)}. Verify grade datasheets before locking wall thickness, shrinkage, and tolerances."
+        material_note = f"Detected material candidates: {', '.join(frame.materials)}. Verify grade datasheets before locking shrinkage, wall thickness, heat resistance, impact behavior, and tolerances."
+
+    injection_focus = "injection" in query.lower() or "mold" in query.lower() or "mould" in query.lower() or frame.process == "injection molding"
+    process_review = (
+        "1. **Process feasibility:** injection molding is plausible for a cover only if production volume and tooling budget justify mold cost. Confirm annual volume, cavity strategy, cosmetic class, and expected cycle time.\n"
+        "2. **Wall-thickness strategy:** create a wall-thickness map from CAD. Keep nominal thickness consistent; redesign thick islands, abrupt transitions, thick bosses, and heavy corners.\n"
+        "3. **Draft / tool release:** check all pull-direction faces, ribs, bosses, snaps, shutoffs, and texture zones for draft. Lack of draft creates ejection, scuffing, and tooling risk.\n"
+        "4. **Ribs, bosses, and stiffness:** use ribs and local structure instead of mass. Core bosses and connect them to walls/ribs only where load transfer is needed.\n"
+        "5. **Gate, ejector, and parting-line logic:** reserve gate, runner, ejector, parting-line, and shutoff strategy before design freeze, especially for visible A-surfaces.\n"
+        "6. **Shrinkage/warpage risk:** review asymmetric wall sections, large flat panels, unbalanced ribs, gate location, fiber orientation if reinforced, and cooling feasibility.\n"
+        "7. **Tolerance capability:** separate functional dimensions from cosmetic dimensions. Avoid tight plastic tolerances unless process capability and inspection method are defined.\n"
+        "8. **Assembly/DFA:** review snap-fits, screws, inserts, sealing features, datum scheme, assembly direction, tool access, and service/rework risk.\n"
+        "9. **Quality plan:** define CTQs, first article inspection, cosmetic acceptance, dimensional checks, functional tests, and pilot build feedback.\n"
+        "10. **Cost-down logic:** reduce material mass, cycle time, scrap, tooling complexity, secondary operations, inspection burden, and part/fastener count."
+    ) if injection_focus else (
+        "1. **Process feasibility:** identify the intended process and production volume before judging manufacturability.\n"
+        "2. **Geometry-process fit:** map major geometry features to process limits, tooling access, tolerance capability, and inspection method.\n"
+        "3. **Assembly and cost:** reduce part count, setup count, fasteners, secondary operations, scrap risk, and unnecessary precision."
+    )
+
     return (
-        "**Internal Knowledge Only — Manufacturing / DFM scientist review**\n\n"
+        "**Internal Knowledge Only — Manufacturing / DFM Expert Review v22**\n\n"
         + assumptions_block(frame) + "\n\n"
         + protocol_block("manufacturing") + "\n\n"
-        "**Engineering assessment**\n"
-        "1. **Manufacturing process fit:** for an injection-molded cover, geometry must support tooling, flow, cooling, ejection, and dimensional repeatability.\n"
-        "2. **Wall thickness:** keep nominal wall thickness uniform; abrupt transitions increase sink marks, voids, differential cooling, and warpage risk.\n"
-        "3. **Draft and release:** add draft to external walls, internal walls, ribs, bosses, and shutoff surfaces. No-draft faces usually become tooling or cosmetic problems.\n"
-        "4. **Ribs and bosses:** use ribs to add stiffness instead of thick solid sections. Core bosses and connect them with ribs where load transfer is needed.\n"
-        "5. **Radii and stress flow:** add internal radii to improve polymer flow and reduce local stress concentration.\n"
-        "6. **Gate/ejector/parting logic:** reserve gate, ejector, parting line, and shutoff locations early, especially for visible surfaces.\n"
-        "7. **Tolerances:** avoid tight plastic tolerances unless tied to function; tight tolerances raise tooling, inspection, scrap, and cycle-time risk.\n"
-        "8. **Assembly:** check screws, snap-fits, inserts, sealing ribs, datum scheme, and tool access.\n\n"
+        "**Expert manufacturing assessment**\n"
+        + process_review + "\n\n"
         f"**Material/process note**\n- {material_note}\n\n"
-        "**Internal rules applied**\n" + "\n".join(f"- {r}" for r in rules) + "\n\n"
+        "**Internal rules applied from Manufacturing / DFM Expert Pack**\n" + "\n".join(f"- {r}" for r in rules[:8]) + "\n\n"
         + missing_block(frame) + "\n\n"
+        "**Recommended next action**\n"
+        "- Provide CAD image/STEP, material grade, nominal wall thickness, annual production volume, surface class, assembly method, and critical tolerances. With those inputs, MechAI can produce a ranked DFM risk table and cost-down action list.\n\n"
         + sources_block(hits) + "\n\n"
-        "**Engineering use note:** this is a knowledge-pack grounded starting review, not certified production approval. Validate mold-flow risks, tolerance capability, tooling assumptions, and test evidence before release."
+        "**Engineering use note:** this is internal knowledge-pack guidance, not certified production approval. Validate tooling assumptions, dimensional capability, mold-flow risks, inspection plan, and test evidence before release."
     )
 
 def compose_fea_answer(query: str, frame: QueryFrame, hits: List[KnowledgeHit]) -> str:
@@ -838,7 +959,7 @@ with st.sidebar:
 
     with st.expander("Settings", expanded=False):
         st.caption("Mode: Internal Knowledge Only")
-        st.caption("Brain: Mechanical Scientist v21")
+        st.caption("Brain: Mechanical Scientist v22 · DFM Expert Pack")
         st.caption(f"Internal knowledge docs: {len(load_docs())}")
         st.caption(f"Reasoning protocols: {len(PROTOCOLS)}")
         st.caption("External providers are not part of this build.")
@@ -850,7 +971,7 @@ with st.sidebar:
 # -----------------------------------------------------------------------------
 if st.session_state.view == "About":
     st.markdown(f"""
-**MechAI Pro — Mechanical Scientist Brain**
+**MechAI Pro — Mechanical Scientist Brain v22**
 
 This build uses an internal mechanical reasoning engine:
 
@@ -860,6 +981,8 @@ This build uses an internal mechanical reasoning engine:
 - External AI providers are not part of this build.
 
 **Build:** `{BUILD_ID}`
+
+**v22 focus:** Manufacturing / DFM Expert Pack with injection molding, sheet metal, machining, DFA, tolerance capability, cost-down, and quality-control reasoning.
 
 Public demo warning: verify calculations, CAD scripts, simulations, standards compliance, and safety-critical decisions before engineering use.
 """)
@@ -874,10 +997,10 @@ else:
                 st.markdown(f'<div class="message-row"><div class="avatar user">☻</div><div class="bubble user">{html.escape(content)}</div></div>', unsafe_allow_html=True)
             else:
                 agent = m.get("agent", "chief")
-                st.markdown(f'<div class="message-row"><div class="avatar ai">⚙</div><div class="bubble ai"><div class="agent-tag">{html.escape(AGENTS.get(agent, AGENTS["chief"]))} · Internal Knowledge Only · Mechanical Scientist Brain</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="message-row"><div class="avatar ai">⚙</div><div class="bubble ai"><div class="agent-tag">{html.escape(AGENTS.get(agent, AGENTS["chief"]))} · Internal Knowledge Only · Mechanical Scientist Brain v22</div>', unsafe_allow_html=True)
                 st.markdown(content)
                 st.markdown('</div></div>', unsafe_allow_html=True)
-    st.markdown('<div class="footer-note">MechAI Pro · Mechanical Scientist Brain · Knowledge-first · Verify all outputs before engineering use</div>', unsafe_allow_html=True)
+    st.markdown('<div class="footer-note">MechAI Pro · Mechanical Scientist Brain v22 v22 · DFM Expert Pack · Verify all outputs before engineering use</div>', unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
 # Execute
