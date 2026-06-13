@@ -1,26 +1,26 @@
 # -*- coding: utf-8 -*-
 """
-MechAI Pro v26 — Engineering Review Board + Quality Hardening
-====================================================
-Knowledge-first mechanical engineering assistant.
+MechAI Pro v27 — Universal Mechanical Engineering OS
+=====================================================
+A knowledge-first mechanical engineering operating system foundation.
 
-What this build includes:
-1) Deep Engineering Knowledge Library seeds for all workspaces.
-2) Mechanical Reasoning Engine with routing, ontology, missing-data detection, confidence logic.
-3) Engineering Calculators & Validators.
-4) Project Memory & Engineering History.
-5) CAD / SolidWorks Automation Bridge foundation: macro generation, validation, .bas export.
-6) FEA / CFD Simulation Intelligence: setup scoring, APDL/Fluent starter export.
-7) Reports & Engineering Outputs: Markdown, DOCX, PDF, XLSX.
-8) Legal/Private Knowledge Ingestion for user-owned/public references.
-9) Evaluation & Quality Testing System.
-10) Production-grade Streamlit UI foundation.
+This build includes the requested v27-v34 capabilities in a single Streamlit app:
+- Universal Project System
+- Universal Reference Vault
+- Engineering Templates Library
+- Engineering Report Studio
+- Engineering Calculators Pro
+- CAD / SolidWorks Automation Studio
+- FEA / CFD Simulation Studio
+- Account / workspace / permission foundation for multi-tenant evolution
 
-No OpenAI/Gemini dependency in this build. External AI can be added later as an optional tool.
+No OpenAI/Gemini dependency. The app uses internal knowledge packs, project memory,
+calculators, scoring engines, and deterministic engineering review logic.
 """
 from __future__ import annotations
 
 import csv
+import hashlib
 import html
 import io
 import json
@@ -30,7 +30,7 @@ import re
 import shutil
 import textwrap
 import uuid
-from collections import Counter, defaultdict
+import zipfile
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
@@ -40,38 +40,38 @@ import streamlit as st
 
 try:
     import PyPDF2  # type: ignore
-except Exception:  # pragma: no cover
+except Exception:
     PyPDF2 = None
 
 try:
     from docx import Document  # type: ignore
-except Exception:  # pragma: no cover
+except Exception:
     Document = None
 
 try:
     from reportlab.lib.pagesizes import A4  # type: ignore
     from reportlab.pdfgen import canvas  # type: ignore
-except Exception:  # pragma: no cover
+except Exception:
     A4 = None
     canvas = None
 
 try:
     from openpyxl import Workbook  # type: ignore
-except Exception:  # pragma: no cover
+except Exception:
     Workbook = None
 
-APP_VERSION = "v26_ENGINEERING_REVIEW_BOARD_QUALITY_HARDENING_2026_06_13"
+APP_VERSION = "v27_UNIVERSAL_ENGINEERING_OS_2026_06_13"
 APP_TITLE = "MechAI Pro"
 ROOT = Path(__file__).resolve().parent
-KNOWLEDGE_DIR = ROOT / "knowledge_packs"
-PROJECT_MEMORY_DIR = ROOT / "project_memory"
-EXPORT_DIR = ROOT / "exports"
-
-PROJECT_MEMORY_DIR.mkdir(exist_ok=True)
-EXPORT_DIR.mkdir(exist_ok=True)
+DATA_DIR = ROOT / "mechai_data"
+TENANT_DIR = DATA_DIR / "tenants"
+GLOBAL_KNOWLEDGE_DIR = ROOT / "knowledge_packs"
+EXPORT_DIR = DATA_DIR / "exports"
+for p in [DATA_DIR, TENANT_DIR, GLOBAL_KNOWLEDGE_DIR, EXPORT_DIR]:
+    p.mkdir(parents=True, exist_ok=True)
 
 WORKSPACES = {
-    "General engineering": {"icon": "🧠", "folder": None, "agent": "Chief Mechanical Scientist"},
+    "General engineering": {"icon": "🧠", "folder": None, "agent": "Chief Mechanical Engineering Board"},
     "Product R&D / Design": {"icon": "🛠️", "folder": "mechanical_design", "agent": "Mechanical Design Scientist"},
     "CAD / SolidWorks": {"icon": "🧩", "folder": "cad_solidworks", "agent": "CAD / SolidWorks Automation Scientist"},
     "Simulation / FEA": {"icon": "📊", "folder": "simulation_fea", "agent": "FEA Simulation Scientist"},
@@ -81,1512 +81,905 @@ WORKSPACES = {
     "Innovation / Patent": {"icon": "💡", "folder": "innovation_patent", "agent": "Innovation / Patent Scientist"},
 }
 
+PROJECT_TYPES = [
+    "Product design", "DFM review", "Material selection", "FEA setup", "CFD setup",
+    "SolidWorks automation", "Failure analysis", "Cost reduction", "Patent / innovation review",
+]
+
+SOURCE_TYPES = [
+    "Open reference", "Personal reference", "Project reference", "Team reference",
+    "Public datasheet", "Supplier catalog", "Design guide", "Standards summary", "Own engineering note",
+]
+CONFIDENTIALITY = ["Public", "Internal", "Private", "Confidential"]
+ROLES = ["Owner", "Admin", "Engineer", "Reviewer", "Viewer"]
+
 # -----------------------------------------------------------------------------
-# Deep Knowledge Library Seeds
+# Seeded global knowledge library
 # -----------------------------------------------------------------------------
 
 KNOWLEDGE_SEED: Dict[str, Dict[str, str]] = {
     "mechanical_design": {
         "beams.md": """
-# Beams — Mechanical Design Expert Pack
-
-## Scope
-Beam bending, shear, deflection, stiffness, support conditions, preliminary sizing, and validation.
-
-## Required inputs
-- Load case: point load, distributed load, moment, combined loading.
-- Support condition: simply supported, cantilever, fixed-fixed, overhung.
-- Span length, cross-section geometry, material modulus, yield strength.
-- Deflection limit, safety factor, environment, manufacturing process.
-
-## Core equations and checks
-- Bending stress: sigma = M*c/I.
-- Shear stress check depends on section; rectangular approximation tau_max = 1.5V/A.
-- Center point load simply supported: Mmax = P*L/4, deflection = P*L^3/(48EI).
-- Cantilever end load: Mmax = P*L, deflection = P*L^3/(3EI).
-- Always check both strength and stiffness; many beam designs fail by excessive deflection before yield.
-
-## Decision logic
-- If load path is unclear, confidence is low.
-- If only force is known but support and geometry are missing, request support and cross-section.
-- If deflection tolerance is critical, rank stiffness before stress.
-- If cyclic load exists, switch to fatigue reasoning.
-
-## Failure modes
-Yielding, buckling, excessive deflection, vibration, local stress concentration, weld/joint failure.
-
-## Validation
-Compare hand calculation with FEA or physical test. Confirm load cases and boundary conditions before release.
+# Beams Expert Pack
+Scope: bending, shear, deflection, support conditions, load paths, stiffness and validation.
+Required inputs: load case, supports, span, cross-section, material, deflection limit, safety factor.
+Core equations: bending stress sigma=M*c/I; simply-supported center load deflection delta=P*L^3/(48*E*I); cantilever end load delta=P*L^3/(3*E*I).
+Decision logic: if support or cross-section is missing, do not release sizing; if cyclic loads exist, switch to fatigue reasoning; check stiffness and strength separately.
+Failure modes: yielding, excessive deflection, buckling, vibration, local stress concentration, joint failure.
+Validation: hand calculation, FEA sanity check, physical load test when critical.
 """,
         "shafts.md": """
-# Shafts — Mechanical Design Expert Pack
-
-## Scope
-Rotating or stationary shafts under torque, bending, axial load, fatigue, keyways, bearing seats, and critical speed.
-
-## Required inputs
-Torque, speed, bending moment, support/bearing layout, diameter constraints, material, surface finish, keyways/splines, duty cycle.
-
-## Core equations and checks
-- Solid circular torsion shear: tau_max = 16T/(pi*d^3).
-- Angle of twist: theta = T*L/(J*G), J = pi*d^4/32 for solid shaft.
-- Combined bending/torsion needs equivalent stress such as von Mises or fatigue criteria.
-- Keyways reduce fatigue strength and introduce stress concentration.
-
-## Decision logic
-- If shaft transmits power, compute torque from P = T*omega.
-- If keyway exists, increase fatigue risk.
-- If high speed, evaluate critical speed and balancing.
-- If bearings are close to load, check bearing reaction and deflection.
-
-## Failure modes
-Torsional yielding, bending fatigue, fretting at bearing seats, keyway crack initiation, excessive twist, resonance.
-
-## Validation
-Hand calculations, fatigue estimate, bearing life, deflection check, prototype run-out/vibration test.
+# Shafts Expert Pack
+Scope: torque, bending, fatigue, keyways, bearing seats, critical speed and manufacturability.
+Required inputs: torque, speed, bending moment, bearing layout, diameter, material, duty cycle, keyway/spline details.
+Equations: solid shaft torsional shear tau=16T/(pi*d^3); angle of twist theta=T*L/(J*G), J=pi*d^4/32.
+Decision logic: keyways increase fatigue risk; high speed requires critical speed check; combined bending/torsion requires equivalent stress.
+Failure modes: torsional yielding, bending fatigue, fretting, keyway cracking, excessive twist, resonance.
 """,
         "bearings.md": """
-# Bearings — Mechanical Design Expert Pack
-
-## Scope
-Bearing selection, L10 life, load ratings, shaft/housing fits, lubrication, contamination, speed and temperature limits.
-
-## Required inputs
-Radial load, axial load, speed, desired life, bearing type, load spectrum, lubrication, temperature, contamination level.
-
-## Core equations and checks
-- Basic rating life: L10 = (C/P)^p million revolutions; p=3 for ball bearings, p=10/3 for roller bearings.
-- Life hours: L10h = 1e6/(60*n) * (C/P)^p.
-- Equivalent dynamic load depends on bearing type and axial/radial ratio.
-
-## Decision logic
-- If load spectrum is unknown, confidence is low.
-- If contamination or poor lubrication exists, apply service factors.
-- Check fit: rotating inner ring usually needs interference on shaft.
-- Confirm speed, temperature, and sealing.
-
-## Failure modes
-Fatigue spalling, overheating, lubrication starvation, contamination wear, brinelling, misalignment.
-
-## Validation
-Supplier rating, equivalent load calculation, thermal check, lubrication plan, bearing installation review.
+# Bearings Expert Pack
+Scope: bearing selection, L10 life, loads, lubrication, fits, speed and temperature.
+Inputs: radial/axial load, speed, life target, type, lubrication, contamination, temperature.
+Equation: L10=(C/P)^p million revolutions; p=3 ball bearings, p=10/3 roller bearings; L10h=1e6/(60n)*(C/P)^p.
+Decision logic: unknown load spectrum lowers confidence; contamination/lubrication require service factors; rotating ring fit must be checked.
+Failures: spalling, overheating, lubrication starvation, contamination wear, brinelling, misalignment.
 """,
         "gears.md": """
-# Gears — Mechanical Design Expert Pack
-
-## Scope
-Preliminary gear selection, gear ratio, torque transfer, tooth bending, pitting, lubrication and manufacturability.
-
-## Required inputs
-Power, speed, ratio, torque, gear type, module/DP, face width, material, heat treatment, duty cycle, noise target.
-
-## Core checks
-- Torque from power and angular speed.
-- Tooth bending strength and contact stress require geometry factors.
-- Face width, pressure angle, module, tooth count and center distance must be consistent.
-- Avoid undercut for low tooth counts.
-
-## Decision logic
-- If high shock load, increase service factor.
-- If quiet operation needed, consider helical gears and surface finish.
-- If compact gearbox, check thermal and lubrication limits.
-
-## Failure modes
-Tooth bending fracture, pitting, scuffing, wear, noise, misalignment, lubrication failure.
-
-## Validation
-AGMA/ISO-style detailed check, contact pattern inspection, prototype endurance/noise test.
+# Gears Expert Pack
+Scope: preliminary gear sizing, ratio, torque, tooth bending, pitting, noise, heat and lubrication.
+Inputs: power, speed, ratio, torque, gear type, module/DP, face width, material, heat treatment, duty cycle.
+Decision logic: shock load requires service factor; quiet operation may need helical gears; compact gearboxes need thermal check.
+Failures: bending fracture, pitting, scuffing, wear, noise, misalignment, lubrication failure.
 """,
         "springs.md": """
-# Springs — Mechanical Design Expert Pack
-
-## Scope
-Compression/extension/torsion springs, stiffness, deflection, fatigue, buckling, solid height, material and manufacturing constraints.
-
-## Required inputs
-Load range, required deflection, available envelope, cycle life, temperature, material, end style.
-
-## Core checks
-- Spring rate depends on wire diameter, mean coil diameter, active coils and shear modulus.
-- Check solid height and maximum stress.
-- Fatigue is critical for cyclic springs.
-- Compression springs may buckle if slender.
-
-## Decision logic
-- If cyclic duty is high, prioritize fatigue safety.
-- If temperature is high, verify material relaxation/creep.
-- If envelope is tight, check solid height and coil bind.
-
-## Failure modes
-Fatigue fracture, set/relaxation, buckling, corrosion, coil bind.
-
-## Validation
-Load-deflection test, cycle test, dimensional inspection.
+# Springs Expert Pack
+Scope: compression, extension, torsion springs; stiffness, stress, fatigue, buckling, solid height.
+Inputs: load range, deflection, envelope, cycle life, temperature, material, end style.
+Decision logic: cyclic duty drives fatigue; high temperature drives relaxation risk; slender compression springs may buckle.
+Failures: fatigue fracture, coil bind, permanent set, relaxation, buckling, corrosion.
 """,
         "fasteners.md": """
-# Fasteners — Mechanical Design Expert Pack
-
-## Scope
-Bolted joints, screw selection, preload, clamp force, thread engagement, loosening, fatigue and assembly process.
-
-## Required inputs
-Joint function, external loads, bolt size/grade, material stack, friction/lubrication, torque method, vibration, temperature.
-
-## Core checks
-- Preload is the primary design variable for bolted joints.
-- Torque is a noisy proxy for preload due to friction variability.
-- Thread engagement in soft materials must be checked.
-- Joint separation and slip must be avoided when preload is functional.
-
-## Decision logic
-- If vibration exists, add locking strategy and joint stiffness review.
-- If plastic bosses are used, avoid over-torque and check creep.
-- If safety-critical, specify controlled tightening method.
-
-## Failure modes
-Loosening, thread stripping, fatigue, creep relaxation, joint separation, galvanic corrosion.
-
-## Validation
-Torque-tension testing, pull-out test, vibration test, assembly audit.
+# Fasteners Expert Pack
+Scope: bolted joints, preload, separation, shear, fatigue, loosening and assembly repeatability.
+Inputs: bolt size, grade, clamp length, joint materials, friction, torque method, external loads, vibration.
+Core logic: preload is the main design variable; torque-control has high scatter; fatigue risk is reduced by adequate preload and joint stiffness.
+Failures: loosening, thread stripping, bolt tensile failure, shear, bearing, fatigue, galvanic corrosion.
 """,
         "fatigue.md": """
-# Fatigue — Mechanical Design Expert Pack
-
-## Scope
-High-cycle and low-cycle fatigue, stress concentrations, surface finish, mean stress, notch sensitivity and validation.
-
-## Required inputs
-Load cycle, stress amplitude, mean stress, material fatigue data, surface finish, size, temperature, environment, notches.
-
-## Core logic
-- Fatigue risk increases with cyclic stress, notches, tensile mean stress, poor finish, corrosion and temperature.
-- Static yield safety does not guarantee fatigue safety.
-- Stress concentration at keyways, threads, sharp corners and weld toes must be included.
-
-## Decision logic
-- If cyclic load exists and geometry has notches, route to fatigue review.
-- If no S-N data exists, confidence is limited.
-- Use conservative assumptions before test validation.
-
-## Failure modes
-Crack initiation at stress raisers, crack growth, sudden fracture.
-
-## Validation
-Fatigue calculation, FEA hotspot review, endurance test, inspection plan.
+# Fatigue Expert Pack
+Scope: cyclic loads, endurance, mean stress, stress concentration, surface finish and reliability.
+Inputs: load spectrum, cycles, material, surface finish, size, temperature, notches, welds.
+Decision logic: if load cycles are unknown, fatigue confidence is low; stress concentrations and poor finish reduce life; welds require weld-specific fatigue rules.
+Failures: crack initiation at notch/keyway/weld, propagation, sudden fracture.
 """,
         "gdnt_tolerances.md": """
-# GD&T and Tolerances — Mechanical Design Expert Pack
-
-## Scope
-Functional tolerancing, datum strategy, fits, stack-up, manufacturability, inspection and assembly compatibility.
-
-## Required inputs
-Functional interfaces, datum features, critical dimensions, mating parts, manufacturing process, inspection method.
-
-## Core rules
-- Tolerances must be tied to function, not arbitrary precision.
-- Over-tight tolerances increase cost and scrap.
-- Datum scheme must reflect assembly and inspection reality.
-- Tolerance stack-up must be checked for critical assemblies.
-
-## Decision logic
-- If tolerance is critical but process is unknown, risk is high.
-- If inspection method is missing, release readiness is low.
-- GD&T should control form/orientation/location according to functional need.
-
-## Failure modes
-Assembly interference, excessive clearance, inspection ambiguity, high scrap, supplier disputes.
-
-## Validation
-Tolerance stack-up, gauge/inspection plan, process capability check.
+# GD&T and Tolerances Expert Pack
+Scope: datum strategy, functional tolerancing, tolerance stack-up, process capability and inspection.
+Inputs: function, mating parts, datums, CTQ dimensions, manufacturing process, inspection method.
+Decision logic: avoid arbitrary tight tolerances; tolerance should follow function and process capability; define datums before feature controls.
+Failures: assembly interference, excessive inspection cost, poor repeatability, supplier disputes.
 """,
     },
     "manufacturing_dfm": {
         "injection_molding_expert.md": """
-# Injection Molding Expert Pack
-
-## Scope
-DFM for thermoplastic injection molded parts: wall thickness, draft, ribs, bosses, gates, ejectors, shrinkage, sink marks, warpage, tooling and production stability.
-
-## Required inputs
-Material grade, nominal wall thickness, CAD geometry, part function, surface class, annual volume, tolerances, assembly method, inserts/snap-fits.
-
-## Core rules
-- Keep wall thickness as uniform as possible.
-- Avoid thick bosses and thick intersections; they create sink, voids and long cycle time.
-- Add draft to vertical walls, ribs and bosses to allow clean ejection.
-- Ribs should stiffen without becoming thick solid sections.
-- Gate location affects flow, weld lines, packing, shrinkage and appearance.
-- Ejector placement must avoid cosmetic damage and deformation.
-
-## Decision logic
-- If material is unknown, confidence is low-to-medium.
-- If wall thickness is unknown, wall/sink/warpage risk is high.
-- If CAD is absent, review is preliminary.
-- If surface class is high, gate, ejector and parting line risk rises.
-
-## Red flags
-Sharp internal corners, thick bosses, no draft, uneven walls, isolated heavy sections, deep ribs, uncontrolled snap-fit tolerance.
-
-## Validation
-Moldflow or simplified filling review, prototype tooling or trial shot, dimensional inspection, sink/warpage review, assembly trial.
+# Injection Molding DFM Expert Pack
+Scope: thermoplastic part manufacturability, wall thickness, draft, ribs, bosses, sink, warpage, tooling and quality.
+Required inputs: material grade, nominal wall thickness, part size, ribs/bosses/snap-fits, surface class, production volume, tolerance targets.
+Decision logic: prioritize uniform wall thickness; avoid thick bosses; use ribs for stiffness; add draft for ejection; consider gate, parting line and ejector marks early.
+Risk rules: unknown material and wall thickness create high risk; tall ribs and thick bosses increase sink/warpage risk; tight tolerances increase tooling and process risk.
+Validation: mold-flow review for critical parts, first article inspection, shrinkage verification, process capability study.
 """,
         "sheet_metal_expert.md": """
-# Sheet Metal Expert Pack
-
-## Scope
-Sheet metal DFM: bends, bend radius, K-factor, reliefs, holes near bends, flanges, flat pattern, tolerances and forming limits.
-
-## Required inputs
-Material, thickness, bend radius, bend angle, grain direction, tooling, surface finish, hole/flange geometry, flat pattern requirement.
-
-## Core rules
-- Internal bend radius should be compatible with material and thickness.
-- Holes/slots near bends can distort and need minimum distance.
-- Bend relief prevents tearing at flange ends.
-- Tolerances across multiple bends accumulate.
-- Flat pattern must use appropriate K-factor/bend allowance.
-
-## Decision logic
-- If thickness or bend radius missing, bend feasibility is uncertain.
-- If tight tolerance across bends, process capability risk increases.
-- If cosmetic surface, tooling marks and grain direction matter.
-
-## Validation
-Flat pattern review, bend trial, first article inspection, gauge strategy.
+# Sheet Metal DFM Expert Pack
+Scope: bending, bend radius, K-factor, bend allowance, hole-to-bend distance, flat patterns and manufacturability.
+Inputs: material, thickness, bend angle, inside radius, tooling, grain direction, tolerances.
+Decision logic: inside bend radius should suit material/tooling; holes near bends distort; avoid complex formed features without tooling review.
+Validation: flat pattern review, bend sample, tolerance capability check.
 """,
         "machining_expert.md": """
-# Machining Expert Pack
-
-## Scope
-CNC/machining DFM: tool access, setups, tolerances, surface finish, fixturing, material machinability and cycle time.
-
-## Required inputs
-Material, stock form, tolerances, surface finish, quantity, machine type, datum/fixturing, tool access constraints.
-
-## Core rules
-- Reduce number of setups and reorientations.
-- Avoid unnecessarily tight tolerances and deep narrow pockets.
-- Internal radii must match tool availability.
-- Datum strategy must support fixturing and inspection.
-- Surface finish requirements affect process time and tooling.
-
-## Decision logic
-- If tolerance is tighter than process capability, risk is high.
-- If deep pockets or small radii exist, tooling/cycle risk is high.
-- If datum scheme unclear, inspection and repeatability risk rise.
-
-## Validation
-CAM review, tool access review, setup sheet, first article inspection.
+# Machining DFM Expert Pack
+Scope: CNC milling/turning, setups, tool access, tolerances, surface finish, cycle time and cost.
+Inputs: material, geometry, tolerances, finish, volume, datum plan, tool access.
+Decision logic: deep pockets, sharp internal corners, tight tolerances and hard materials increase cost; design for fewer setups and standard tools.
+Validation: CAM review, setup plan, inspection plan, first article inspection.
 """,
         "assembly_dfa_expert.md": """
-# Assembly / DFA Expert Pack
-
-## Scope
-Design for assembly: part count, fasteners, orientation, handling, mistake-proofing, access, serviceability and assembly cost.
-
-## Required inputs
-Assembly sequence, mating parts, fasteners, operator/automation method, access constraints, service requirements, production volume.
-
-## Core rules
-- Reduce part count where possible.
-- Prefer self-locating features and one-way assembly.
-- Avoid hidden fasteners and poor tool access.
-- Use common fastener sizes and minimize tool changes.
-- Consider poka-yoke for orientation-sensitive parts.
-
-## Decision logic
-- If assembly sequence is unknown, DFA confidence is low.
-- If fastener count is high, cost and error risk increase.
-- If snap-fits are used, material creep and tolerance sensitivity must be checked.
-
-## Validation
-Assembly trial, time study, operator feedback, service/disassembly review.
+# Assembly DFA Expert Pack
+Scope: part count reduction, orientation, fastening, serviceability, poka-yoke and assembly time.
+Inputs: mating parts, assembly sequence, fasteners, access, tools, field service requirements.
+Decision logic: reduce part count; avoid ambiguous orientation; design self-locating features; avoid hidden fasteners and fragile assembly steps.
+Validation: assembly trial, time study, ergonomic review, error-proofing check.
 """,
         "tolerance_capability_expert.md": """
-# Tolerance and Process Capability Expert Pack
-
-## Scope
-Tolerance feasibility, process capability, Cp/Cpk thinking, inspection strategy and cost impact.
-
-## Required inputs
-Critical dimensions, tolerance values, manufacturing process, material, inspection method, supplier capability, volume.
-
-## Core rules
-- Tight tolerances must be justified by function.
-- Process capability must match tolerance requirement.
-- Dimensional stability depends on material, process and environment.
-- Inspection method must resolve tolerance reliably.
-
-## Decision logic
-- If tolerance is specified but process is unknown, risk is high.
-- If tolerance is cosmetic/non-functional, recommend relaxation.
-- If high volume, capability and gauge repeatability become critical.
-
-## Validation
-Capability study, gauge R&R, first article inspection, tolerance stack-up.
+# Tolerance Capability Expert Pack
+Scope: process capability, tolerance feasibility, inspection, CTQ dimensions and cost impact.
+Inputs: manufacturing process, tolerance values, CTQ list, inspection equipment, supplier capability.
+Decision logic: tight tolerances must be justified by function; process capability should be matched to tolerance; unknown CTQ lowers confidence.
+Validation: capability study, gauge R&R, first article inspection.
 """,
         "cost_reduction_expert.md": """
 # Cost Reduction Expert Pack
-
-## Scope
-Cost-down engineering: material, process, tooling, cycle time, scrap, assembly effort, inspection and supplier complexity.
-
-## Required inputs
-Volume, current process, material cost, cycle time, part count, scrap rate, tooling assumptions, quality requirements.
-
-## Cost drivers
-- Material mass and grade.
-- Cycle time and machine rate.
-- Tooling complexity and maintenance.
-- Scrap/rework.
-- Assembly labor and fasteners.
-- Inspection burden.
-
-## Decision logic
-- Rank recommendations by risk reduction, cost impact and implementation ease.
-- Avoid cost reduction that increases field failure risk.
-- Prefer geometry simplification and tolerance relaxation before changing material blindly.
-
-## Validation
-Cost model, supplier quote, pilot run, quality impact review.
+Scope: material, process, tooling, cycle time, assembly, scrap, inspection and logistics cost drivers.
+Inputs: volume, material, process, cycle time, scrap rate, labor content, tooling complexity, supplier constraints.
+Decision logic: attack cost through part count reduction, standard materials, process simplification, tolerance relaxation and cycle-time reduction.
 """,
         "quality_control_expert.md": """
 # Quality Control Expert Pack
-
-## Scope
-Quality planning, inspection, CTQ dimensions, defect modes, sampling, first article and production stability.
-
-## Required inputs
-Critical-to-quality features, tolerance limits, defect risks, inspection tools, production volume, supplier process.
-
-## Core rules
-- Identify CTQ features based on function and assembly.
-- Match inspection method to tolerance and geometry.
-- High-risk defects need prevention and detection controls.
-- Quality plan should connect failure modes to inspection actions.
-
-## Decision logic
-- If CTQ features are unknown, release readiness is low.
-- If inspection is not defined, tolerance control is incomplete.
-- If defect risk is high, add process controls and validation tests.
-
-## Validation
-Control plan, FAI, capability study, incoming inspection, production audit.
+Scope: inspection plans, CTQs, failure modes, process capability, first article, sampling and production stability.
+Inputs: CTQ dimensions, critical functions, process, volume, inspection method, acceptance criteria.
+Decision logic: every high-risk DFM item needs a verification method; inspection should focus on CTQs and failure modes, not every dimension equally.
+""",
+        "welding.md": """
+# Welding DFM Expert Pack
+Scope: weld joint design, distortion, access, fixture strategy, inspection and fatigue.
+Inputs: material, thickness, joint type, load path, weld process, access, fatigue duty.
+Decision logic: design welds for access and inspection; avoid over-welding; account for heat distortion; fatigue welds require special review.
 """,
     },
     "materials_selection": {
         "thermoplastics.md": """
-# Thermoplastics Expert Pack
-
-## Scope
-Selection of ABS, PP, PE, PC, PA, POM, PET, PBT, PEEK and blends for molded/mechanical parts.
-
-## Required inputs
-Function, load, temperature, chemical exposure, impact, stiffness, cosmetic needs, process, cost target, regulatory constraints.
-
-## Core rules
-- ABS is common for cosmetic enclosures but has limited heat/chemical resistance.
-- PP is chemically resistant and low density but lower stiffness.
-- PC has high impact resistance but needs drying and careful molding.
-- PA absorbs moisture and dimensions can change.
-- PEEK is high performance but expensive.
-
-## Decision logic
-- If temperature is high, screen out low-heat plastics.
-- If snap-fits are used, toughness and fatigue matter.
-- If tight tolerance, moisture absorption and shrinkage matter.
-
-## Validation
-Supplier datasheet, prototype molding, mechanical testing, environmental exposure.
+# Thermoplastics Materials Expert Pack
+Scope: ABS, PC, PP, PA, POM and other plastics for mechanical parts.
+Inputs: stiffness, toughness, temperature, chemical exposure, UV, appearance, process, cost, availability.
+Decision logic: ABS is common for enclosures; PC improves impact/temperature; PP improves chemical resistance and low cost but lower stiffness; PA absorbs moisture.
+Risks: creep, UV degradation, shrinkage, warpage, chemical attack, flammability.
 """,
         "metals.md": """
-# Metals Expert Pack
-
-## Scope
-Steel, stainless steel, aluminum, brass, cast alloys and heat-treated metals for mechanical design.
-
-## Required inputs
-Load, stiffness, fatigue, corrosion, temperature, mass target, process, surface finish, cost and availability.
-
-## Core rules
-- Steel offers strength and stiffness but higher density and corrosion risk.
-- Aluminum reduces mass but has lower modulus and different fatigue behavior.
-- Stainless improves corrosion resistance but may increase cost and machining difficulty.
-- Heat treatment affects strength, toughness and distortion.
-
-## Decision logic
-- If stiffness drives design, modulus matters more than yield strength.
-- If corrosion exists, material and coating must be considered together.
-- If fatigue exists, surface finish and stress concentration are critical.
-
-## Validation
-Material certification, mechanical testing, corrosion testing, process validation.
+# Metals Materials Expert Pack
+Scope: steels, stainless steels, aluminum alloys, brass/bronze and cast alloys.
+Inputs: strength, stiffness, corrosion, temperature, weight, manufacturability, surface treatment, cost.
+Decision logic: aluminum reduces weight; steels improve strength/cost; stainless improves corrosion; material choice must match manufacturing process.
 """,
         "elastomers.md": """
 # Elastomers Expert Pack
-
-## Scope
-Rubber/elastomer selection for seals, vibration isolation, grips and flexible components.
-
-## Required inputs
-Fluid exposure, temperature, compression set, hardness, load, motion, UV/ozone, manufacturing method.
-
-## Core rules
-- Hardness is not enough; compression set, chemical resistance and temperature are critical.
-- NBR is common for oils; EPDM for weather/water; silicone for temperature; FKM for chemicals/heat.
-- Seal design must consider squeeze, groove fill and tolerance stack.
-
-## Decision logic
-- If fluid is unknown, material confidence is low.
-- If sealing is critical, groove and compression data are required.
-
-## Validation
-Compression set test, leak test, aging exposure, assembly trial.
+Scope: rubber-like materials, seals, gaskets, vibration isolation and flexible components.
+Inputs: hardness, compression set, temperature, chemicals, UV, seal pressure, fatigue.
+Decision logic: select by environment and compression set, not hardness alone.
+""",
+        "composites.md": """
+# Composites Expert Pack
+Scope: fiber-reinforced plastics, laminates and anisotropic design logic.
+Inputs: load direction, stiffness, manufacturing process, environment, damage tolerance.
+Decision logic: align fibers to load paths; validate joints and impact/delamination risks.
 """,
         "corrosion.md": """
 # Corrosion Expert Pack
-
-## Scope
-Corrosion risk screening, galvanic compatibility, coatings, environment and lifecycle.
-
-## Required inputs
-Material pair, electrolyte/environment, temperature, coating, exposure duration, maintenance plan.
-
-## Core rules
-- Galvanic corrosion requires dissimilar metals and electrolyte.
-- Coatings can fail at scratches and edges.
-- Crevices trap electrolyte and increase risk.
-
-## Decision logic
-- If outdoor/marine/chemical exposure exists, corrosion must be explicit.
-- If dissimilar metals contact, check galvanic isolation.
-
-## Validation
-Salt spray/chemical exposure, coating spec, field environment review.
+Scope: galvanic corrosion, environmental exposure, coatings, stainless/passivation and material compatibility.
+Inputs: environment, humidity, chemicals, mating metals, coating, service life.
+Decision logic: dissimilar metals require galvanic review; coatings need inspection and damage tolerance.
 """,
         "temperature_limits.md": """
 # Temperature Limits Expert Pack
-
-## Scope
-Temperature screening for plastics, metals, elastomers and assemblies.
-
-## Required inputs
-Operating temperature, peak temperature, duration, load at temperature, environment, safety margin.
-
-## Core rules
-- Plastics lose stiffness with temperature and may creep.
-- Elastomers degrade or take compression set outside their range.
-- Thermal expansion can dominate tolerance stack-up.
-
-## Decision logic
-- If load is sustained at temperature, creep/relaxation must be checked.
-- If materials have different CTE, interface stress and clearance change matter.
-
-## Validation
-Thermal cycling, heat aging, dimensional inspection, functional test at temperature.
+Scope: high/low temperature effects, creep, softening, embrittlement and thermal expansion.
+Inputs: service temperature, peak temperature, time at temperature, load, material family.
+Decision logic: plastics near Tg/heat-deflection limits need creep and deformation review; thermal expansion affects tolerances.
 """,
         "ashby_selection_logic.md": """
-# Ashby Selection Logic Expert Pack
-
-## Scope
-Structured material selection using functional requirements, constraints, objectives and free variables.
-
-## Process
-1. Translate design need into function, constraints, objective and free variables.
-2. Screen materials that violate hard constraints.
-3. Rank remaining materials by objective: cost, mass, stiffness, strength, thermal performance.
-4. Validate manufacturability and supply.
-
-## Decision logic
-- Never select material from a single property.
-- Separate constraints from objectives.
-- Include process compatibility and supplier availability.
-
-## Validation
-Datasheet review, prototype testing, supplier confirmation, lifecycle risk review.
+# Ashby-Style Material Selection Logic
+Scope: function-objective-constraints-free variables methodology.
+Inputs: function, constraints, objective, free variables, candidate processes.
+Decision logic: define requirements before candidates; screen by constraints then rank by objective such as mass/cost/stiffness.
 """,
     },
     "simulation_fea": {
         "static_structural.md": """
 # Static Structural FEA Expert Pack
-
-## Scope
-Static stress/deflection simulation setup for mechanical components and assemblies.
-
-## Required inputs
-Objective, geometry, material, loads, constraints, contacts, mesh strategy, acceptance criteria.
-
-## Core rules
-- Boundary conditions dominate results.
-- Loads and constraints must represent physical reality.
-- Contacts need careful stiffness/friction assumptions.
-- Mesh convergence is mandatory for release-critical stress.
-
-## Decision logic
-- If material is missing, setup readiness is low.
-- If constraints are unrealistic, results can be misleading.
-- If only stress plot exists without convergence, confidence is low.
-
-## Validation
-Hand calculation, benchmark, mesh convergence, test correlation.
+Scope: linear/nonlinear static structural setup, loads, supports, contacts, mesh and interpretation.
+Inputs: objective, geometry, material, loads, constraints, contacts, failure criteria, validation target.
+Decision logic: wrong boundary conditions invalidate results; validate with hand calculation; use mesh convergence; report stress away from singularities.
 """,
         "modal_analysis.md": """
 # Modal Analysis Expert Pack
-
-## Scope
-Natural frequencies, mode shapes, resonance avoidance and boundary condition sensitivity.
-
-## Required inputs
-Mass distribution, stiffness, constraints, operational excitation frequencies, damping assumptions.
-
-## Core rules
-- Modal results are highly sensitive to constraints and mass representation.
-- Compare natural frequencies with excitation frequencies and harmonics.
-- Mode shape interpretation matters more than frequency alone.
-
-## Validation
-Tap test, accelerometer data, operational vibration measurements.
+Scope: natural frequencies, mode shapes, constraints and resonance risk.
+Inputs: mass, stiffness, constraints, operational excitation frequencies.
+Decision logic: compare natural frequencies to excitation; verify mass and boundary conditions; do not treat mode shape stress as static stress.
 """,
         "buckling.md": """
 # Buckling FEA Expert Pack
-
-## Scope
-Linear eigenvalue buckling and nonlinear post-buckling reasoning for slender structures.
-
-## Required inputs
-Geometry, compressive load path, imperfections, material, constraints, load eccentricity.
-
-## Core rules
-- Linear buckling often overestimates capacity.
-- Imperfections and eccentricity matter.
-- Slender structures may fail by instability before material yield.
-
-## Validation
-Hand Euler estimate, nonlinear analysis, physical compression test.
+Scope: linear eigenvalue buckling, nonlinear buckling and slender structures.
+Inputs: geometry imperfections, load, supports, material, initial defects.
+Decision logic: eigenvalue buckling is optimistic; use nonlinear analysis for critical structures.
 """,
         "fatigue_fea.md": """
 # Fatigue FEA Expert Pack
-
-## Scope
-Fatigue assessment using stress results, load cycles, mean stress, notch effects and material data.
-
-## Required inputs
-Stress amplitude, mean stress, S-N or strain-life data, surface finish, notch, environment, cycle count.
-
-## Core rules
-- Fatigue needs cyclic load definition; static FEA alone is insufficient.
-- Hotspot stress should be mesh-insensitive.
-- Surface finish and notches affect fatigue significantly.
-
-## Validation
-Fatigue calculation, endurance testing, inspection plan.
+Scope: stress-life/strain-life fatigue based on FEA stress results.
+Inputs: load cycles, stress history, material fatigue data, surface finish, notch effects.
+Decision logic: mesh and stress concentration quality control are critical; mean stress correction may be needed.
 """,
         "contacts.md": """
-# Contacts Expert Pack
-
-## Scope
-Contact modeling in FEA: bonded, frictionless, frictional, no-separation and nonlinear contact behavior.
-
-## Required inputs
-Contact surfaces, expected separation/sliding, friction, preload, contact stiffness, mesh density near interface.
-
-## Core rules
-- Wrong contact type can completely change load path.
-- Frictional contact increases nonlinearity and convergence difficulty.
-- Contact pressure requires refined mesh and realistic constraints.
-
-## Validation
-Contact sensitivity study, load path review, physical interface inspection.
+# Contact Modeling Expert Pack
+Scope: bonded/frictional/no-separation contacts, contact stiffness, convergence and load transfer.
+Inputs: contact surfaces, friction, preload, expected separation/sliding.
+Decision logic: bonded contacts can over-stiffen; frictional contacts require convergence checks.
 """,
         "mesh_convergence.md": """
 # Mesh Convergence Expert Pack
-
-## Scope
-Mesh independence, local refinement, stress singularities and result credibility.
-
-## Required inputs
-Quantity of interest, mesh sizes, element type, geometry features, stress concentration zones.
-
-## Core rules
-- Refine mesh until engineering quantity stabilizes.
-- Ignore singular stress peaks at idealized sharp constraints unless physically meaningful.
-- Use local refinement near stress raisers and contacts.
-
-## Validation
-Convergence plot, independent hand estimate, sensitivity studies.
+Scope: element quality, refinement strategy, local stress, displacement and reaction convergence.
+Inputs: geometry, stress gradients, element type, result target.
+Decision logic: validate quantities of interest, not just pretty plots; singularities should not drive design decisions.
 """,
         "validation.md": """
 # FEA Validation Expert Pack
-
-## Scope
-Verification and validation strategy for simulation credibility.
-
-## Core rules
-- Verification: solve the equations correctly.
-- Validation: solve the right physical problem.
-- Every release-critical simulation needs a validation plan.
-
-## Evidence types
-Hand calculations, benchmark problems, test data, mesh convergence, sensitivity studies, peer review.
+Scope: analytical checks, test correlation, benchmark cases, sanity checks and uncertainty.
+Inputs: expected load path, hand calc, test data, acceptance criteria.
+Decision logic: simulation without validation is evidence-limited; define acceptance before solving.
 """,
     },
     "cfd_thermal": {
         "internal_flow.md": """
-# Internal Flow Expert Pack
-
-## Scope
-Pipe/duct/channel flow, pressure drop, Reynolds number, entrance effects and thermal-fluid checks.
-
-## Required inputs
-Fluid, density, viscosity, diameter/hydraulic diameter, velocity/flow rate, length, roughness, temperature.
-
-## Core rules
-- Reynolds number classifies flow regime.
-- Pressure drop depends on friction factor, length, diameter, velocity and fittings.
-- Entrance length matters in short channels.
-- For heat transfer, Prandtl and Nusselt correlations may be needed.
-
-## Validation
-Mass balance, pressure measurement, analytical estimate, grid sensitivity.
+# Internal Flow CFD Expert Pack
+Scope: pipe/duct/channel flow, pressure drop, flow regime, thermal flow and boundary conditions.
+Inputs: fluid, density, viscosity, flow rate/velocity, diameter, roughness, temperature, inlet/outlet conditions.
+Decision logic: calculate Reynolds number first; validate pressure drop against correlations; check mass conservation.
 """,
         "external_flow.md": """
-# External Flow Expert Pack
-
-## Scope
-Flow around bodies, drag, boundary layers, separation, wake and cooling.
-
-## Required inputs
-Geometry, free-stream velocity, fluid properties, turbulence intensity, domain size, boundary conditions.
-
-## Core rules
-- Domain size and boundary placement affect results.
-- Mesh near walls and separation regions is critical.
-- Validate drag/pressure trends with correlations or test data.
+# External Flow CFD Expert Pack
+Scope: aerodynamic/hydrodynamic external flow, domain sizing, far-field boundaries and wake refinement.
+Inputs: velocity, fluid, characteristic length, domain, turbulence intensity, target coefficients.
+Decision logic: domain size and boundary placement affect results; mesh wake and boundary layer carefully.
 """,
         "reynolds_number.md": """
 # Reynolds Number Expert Pack
-
-## Scope
-Flow regime classification using Re = rho*V*D/mu.
-
-## Required inputs
-Density, velocity, characteristic length/diameter, dynamic viscosity.
-
-## Logic
-- Pipe flow: laminar typically Re < 2300, transitional around 2300-4000, turbulent above that.
-- Use regime to choose model and correlations.
-
-## Missing data
-If density, viscosity, velocity or length are missing, do not classify with confidence.
+Re = rho*V*D/mu. It classifies flow regime and drives laminar/turbulent model selection.
+Typical pipe thresholds: laminar below about 2300, transitional around 2300-4000, turbulent above about 4000.
 """,
         "turbulence_models.md": """
 # Turbulence Models Expert Pack
-
-## Scope
-Choosing laminar, k-epsilon, k-omega SST, transitional and wall treatment approaches.
-
-## Core rules
-- Use laminar only if regime and physics justify it.
-- k-omega SST is often robust for adverse pressure gradients and near-wall effects.
-- Wall treatment requires y+ compatibility.
-- Model choice must be justified by flow physics, not default settings.
+Scope: k-epsilon, k-omega SST, laminar and transitional modeling.
+Decision logic: use model based on physics, y+, wall treatment, separation, adverse pressure gradient and validation needs.
 """,
         "y_plus.md": """
 # y+ Expert Pack
-
-## Scope
-Near-wall mesh quality and turbulence model wall treatment.
-
-## Core rules
-- Low-Re wall-resolved models generally need y+ near 1.
-- Wall functions typically need larger y+ ranges depending on solver guidance.
-- Inflation layers should resolve boundary layer gradients.
-
-## Validation
-Check y+ contours after solution and adjust mesh accordingly.
+Scope: wall resolution for turbulence modeling.
+Decision logic: low-Re wall-resolved methods often require y+ near 1; wall functions use higher y+. State target before meshing.
 """,
         "pressure_drop.md": """
 # Pressure Drop Expert Pack
-
-## Scope
-Pressure loss in internal flows, fittings and channels.
-
-## Core equations
-- Darcy-Weisbach: DeltaP = f*(L/D)*(rho*V^2/2).
-- Minor losses: DeltaP = K*(rho*V^2/2).
-
-## Required inputs
-Friction factor or roughness, length, diameter, velocity, density, fittings.
+Scope: pipe/duct pressure loss, friction factor, minor losses and validation.
+Equation: Darcy-Weisbach deltaP=f*(L/D)*(rho*V^2/2) plus minor losses.
 """,
         "heat_transfer.md": """
 # Heat Transfer Expert Pack
-
-## Scope
-Conduction, convection, radiation, heat sinks, thermal resistance and transient heat-up.
-
-## Required inputs
-Heat load, geometry, material conductivity, fluid conditions, boundary conditions, ambient temperature.
-
-## Core rules
-- Use thermal resistance networks for first estimates.
-- Convective coefficient uncertainty often dominates simple thermal models.
-- For electronics cooling, junction-to-ambient path matters.
-
-## Validation
-Thermocouple/IR test, energy balance, sensitivity study.
+Scope: convection, conduction, thermal resistance, heat sinks and thermal validation.
+Equation examples: q=h*A*deltaT, conduction q=k*A*deltaT/L, thermal resistance networks.
 """,
     },
     "cad_solidworks": {
         "macro_generation.md": """
 # SolidWorks Macro Generation Expert Pack
-
-## Scope
-Generating safe, structured VBA macros for SolidWorks automation.
-
-## Required inputs
-Task, file types, folder paths, overwrite policy, document type, naming rules, error handling requirements.
-
-## Core rules
-- Always get active SolidWorks application and active document safely.
-- Validate document type before executing operations.
-- Avoid destructive file overwrite unless explicitly allowed.
-- Provide clear run instructions and backup warning.
-
-## Macro structure
-1. Declarations and constants.
-2. Get SldWorks application.
-3. Validate active document.
-4. Execute task.
-5. Error handler.
-6. User-visible completion message.
+Scope: VBA macro generation, model/document access, selection, export and error handling.
+Rules: use explicit object variables; check active document; avoid destructive operations; validate paths; include error handler.
 """,
-        "solidworks_vba_patterns.md": """
-# SolidWorks VBA Patterns Expert Pack
-
-## Scope
-Common VBA automation patterns for SolidWorks.
-
-## Patterns
-- Active document validation.
-- Iterating configurations or drawings.
-- Exporting STEP/PDF/DXF.
-- Handling paths and filenames.
-- Showing status messages.
-
-## Safety
-Use explicit variables, error handling, and non-destructive defaults.
+        "macro_validation.md": """
+# SolidWorks Macro Validation Expert Pack
+Check: option explicit, active document guard, type check, save path validation, error handling, no silent overwrite, clear user instructions.
 """,
-        "feature_creation.md": """
-# Feature Creation Expert Pack
-
-## Scope
-Creating sketches, extrudes, cuts, revolves and reference geometry programmatically.
-
-## Core rules
-- Use parametric dimensions.
-- Name sketches/features clearly.
-- Use units explicitly.
-- Separate sketch creation from feature creation.
+        "batch_export_workflows.md": """
+# Batch Export Workflow Expert Pack
+Scope: exporting STEP, DXF, PDF, drawings and flat patterns.
+Rules: create backup, decide naming convention, handle assemblies/drawings/parts differently, log success/failure per file.
 """,
         "drawing_automation.md": """
 # Drawing Automation Expert Pack
-
-## Scope
-Automated drawing creation, view placement, dimensions, annotations and export.
-
-## Required inputs
-Template path, sheet size, views, scale, title block data, export format.
-
-## Risk
-Drawing automation is sensitive to templates and standards; validate output manually.
+Scope: views, dimensions, sheets, title block, revision notes and PDF export.
+Rules: never assume drawing standard; request template, units, projection, tolerance style.
 """,
         "bom_export.md": """
 # BOM Export Expert Pack
-
-## Scope
-Bill of materials export and metadata extraction.
-
-## Required inputs
-Assembly path, configurations, BOM template, output path, part properties.
-
-## Core rules
-Validate custom properties and configuration-specific data before release.
-""",
-        "dxf_step_export.md": """
-# DXF/STEP Export Expert Pack
-
-## Scope
-Exporting parts, assemblies and sheet metal flat patterns.
-
-## Core rules
-- Validate document type.
-- For sheet metal DXF, ensure flat pattern exists.
-- Check output folder and overwrite policy.
-- Log exported filenames.
-""",
-        "macro_validation.md": """
-# Macro Validation Expert Pack
-
-## Scope
-Checking macro safety and execution readiness.
-
-## Checklist
-- Active document validation.
-- File path validation.
-- Error handler present.
-- Overwrite policy explicit.
-- User instructions included.
-- Backup warning included.
+Scope: assembly BOM extraction, custom properties, part numbers, quantities, materials, revisions.
+Rules: define property mapping and handle virtual components/suppressed parts.
 """,
     },
     "innovation_patent": {
         "idea_evaluation.md": """
 # Idea Evaluation Expert Pack
-
-## Scope
-Evaluating engineering ideas for novelty, usefulness, feasibility, manufacturability and business value.
-
-## Required inputs
-Problem, current alternatives, user benefit, technical principle, prototype concept, manufacturing process, target market.
-
-## Core rules
-Separate invention value into novelty, utility, feasibility, cost and defensibility.
-""",
-        "triz_methods.md": """
-# TRIZ Methods Expert Pack
-
-## Scope
-Contradiction solving, inventive principles and systematic innovation.
-
-## Core logic
-Identify contradiction: improving one parameter worsens another. Generate concepts using separation principles and inventive patterns.
+Scope: problem-solution fit, novelty, technical feasibility, manufacturability and business value.
+Decision logic: separate what is new, useful, manufacturable and commercially valuable.
 """,
         "prior_art_search.md": """
 # Prior Art Search Expert Pack
-
-## Scope
-Planning prior-art searches across patents, products, papers and public disclosures.
-
-## Core rules
-Search by function, mechanism, keywords, classification and synonyms. Document closest references.
+Scope: keyword/classification search, competitor scan, functional decomposition and claim risk.
+Decision logic: search by function, mechanism, outcome, application and alternative terminology.
 """,
         "claim_structure.md": """
 # Claim Structure Expert Pack
-
-## Scope
-High-level claim thinking for inventions. Not legal advice.
-
-## Core rules
-Claims should focus on essential technical features and distinguish from prior art. Patent attorney review is required.
+Scope: independent/dependent claim thinking for engineering inventions.
+Warning: not legal advice; patent attorney review required.
 """,
         "prototype_strategy.md": """
 # Prototype Strategy Expert Pack
-
-## Scope
-Prototype planning, MVP tests, failure discovery and validation roadmaps.
-
-## Core rules
-Prototype to reduce uncertainty, not to look finished. Define test objective before building.
-""",
-        "novelty_risk.md": """
-# Novelty Risk Expert Pack
-
-## Scope
-Assessing novelty uncertainty before patent investment.
-
-## Risk factors
-Known similar products, obvious combination, public disclosure, weak technical distinction.
+Scope: proof of principle, functional prototype, design validation and pilot manufacturing.
+Decision logic: prototype the riskiest assumptions first.
 """,
     },
 }
 
 # -----------------------------------------------------------------------------
-# Data models
+# Helpers
+# -----------------------------------------------------------------------------
+
+def now_iso() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def slugify(text: str, fallback: str = "item") -> str:
+    text = (text or "").strip().lower()
+    text = re.sub(r"[^a-z0-9\u0600-\u06FF]+", "_", text)
+    text = text.strip("_")
+    return text or fallback
+
+
+def safe_read_json(path: Path, default: Any) -> Any:
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+
+
+def safe_write_json(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def strip_md(text: str) -> str:
+    text = re.sub(r"^#{1,6}\s*", "", text, flags=re.M)
+    text = re.sub(r"\*\*|__|`", "", text)
+    return text.strip()
+
+
+def tokenize(text: str) -> List[str]:
+    words = re.findall(r"[a-zA-Z0-9_\u0600-\u06FF]+", text.lower())
+    stop = {"the", "and", "for", "with", "that", "this", "from", "into", "what", "how", "create", "review", "analysis", "please", "عايز", "اعمل", "ايه", "في", "من", "على", "عن"}
+    return [w for w in words if len(w) > 2 and w not in stop]
+
+
+def file_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+
+def write_file(path: Path, data: str | bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(data, bytes):
+        path.write_bytes(data)
+    else:
+        path.write_text(data, encoding="utf-8")
+
+
+def seed_knowledge_library() -> None:
+    for folder, files in KNOWLEDGE_SEED.items():
+        target = GLOBAL_KNOWLEDGE_DIR / folder
+        target.mkdir(parents=True, exist_ok=True)
+        for name, text in files.items():
+            f = target / name
+            if not f.exists() or len(f.read_text(encoding="utf-8", errors="ignore")) < 50:
+                f.write_text(textwrap.dedent(text).strip() + "\n", encoding="utf-8")
+
+
+def extract_uploaded_text(uploaded) -> str:
+    name = uploaded.name.lower()
+    data = uploaded.getvalue()
+    if name.endswith(".pdf") and PyPDF2 is not None:
+        try:
+            reader = PyPDF2.PdfReader(io.BytesIO(data))
+            pages = []
+            for p in reader.pages[:80]:
+                pages.append(p.extract_text() or "")
+            return "\n".join(pages)
+        except Exception as e:
+            return f"[PDF extraction failed: {e}]"
+    try:
+        return data.decode("utf-8", errors="ignore")
+    except Exception:
+        return "[Could not decode file as text.]"
+
+
+def ensure_state() -> None:
+    defaults = {
+        "messages": [],
+        "active_project_id": None,
+        "template_to_use": "",
+        "show_new_project": False,
+        "active_tab": "Chat",
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+# -----------------------------------------------------------------------------
+# Data paths and project system
+# -----------------------------------------------------------------------------
+
+def tenant_path(workspace_id: str) -> Path:
+    return TENANT_DIR / slugify(workspace_id, "personal_workspace")
+
+
+def tenant_projects_dir(workspace_id: str) -> Path:
+    p = tenant_path(workspace_id) / "projects"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def users_file(workspace_id: str) -> Path:
+    return tenant_path(workspace_id) / "users.json"
+
+
+def project_dir(workspace_id: str, project_id: str) -> Path:
+    p = tenant_projects_dir(workspace_id) / project_id
+    p.mkdir(parents=True, exist_ok=True)
+    for sub in ["references", "reports", "artifacts", "uploads"]:
+        (p / sub).mkdir(exist_ok=True)
+    return p
+
+
+def list_projects(workspace_id: str) -> List[Dict[str, Any]]:
+    projects = []
+    for d in tenant_projects_dir(workspace_id).iterdir():
+        if d.is_dir() and (d / "project.json").exists():
+            data = safe_read_json(d / "project.json", {})
+            data["project_id"] = d.name
+            projects.append(data)
+    projects.sort(key=lambda x: x.get("updated_at", x.get("created_at", "")), reverse=True)
+    return projects
+
+
+def create_project(workspace_id: str, meta: Dict[str, Any]) -> str:
+    project_id = slugify(meta.get("project_name", "project")) + "_" + uuid.uuid4().hex[:6]
+    p = project_dir(workspace_id, project_id)
+    meta.update({"project_id": project_id, "created_at": now_iso(), "updated_at": now_iso(), "workspace_id": workspace_id})
+    safe_write_json(p / "project.json", meta)
+    memory = {
+        "questions": [], "decisions": [], "assumptions": [], "materials": [], "calculations": [],
+        "risks": [], "reports": [], "lessons_learned": [], "chat_messages": [], "references": [], "artifacts": []
+    }
+    safe_write_json(p / "memory.json", memory)
+    return project_id
+
+
+def load_project(workspace_id: str, project_id: Optional[str]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    if not project_id:
+        return {}, {}
+    p = project_dir(workspace_id, project_id)
+    return safe_read_json(p / "project.json", {}), safe_read_json(p / "memory.json", {})
+
+
+def save_project(workspace_id: str, project_id: str, meta: Dict[str, Any], memory: Dict[str, Any]) -> None:
+    p = project_dir(workspace_id, project_id)
+    meta["updated_at"] = now_iso()
+    safe_write_json(p / "project.json", meta)
+    safe_write_json(p / "memory.json", memory)
+
+
+def add_memory_item(workspace_id: str, project_id: str, category: str, item: Any) -> None:
+    meta, mem = load_project(workspace_id, project_id)
+    mem.setdefault(category, []).append(item)
+    save_project(workspace_id, project_id, meta, mem)
+
+# -----------------------------------------------------------------------------
+# Reference vault and retrieval
 # -----------------------------------------------------------------------------
 
 @dataclass
 class SourceChunk:
-    workspace: str
-    source: str
+    source_id: str
     title: str
-    text: str
-    score: float
-    source_type: str = "knowledge_pack"
-
-@dataclass
-class ProblemFrame:
     workspace: str
-    agent: str
-    part: str
-    process: str
-    material: str
-    quantities: List[str]
-    concepts: List[str]
-    missing_inputs: List[str]
-    confidence: str
-
-@dataclass
-class RiskItem:
-    area: str
-    risk: str
-    reason: str
-    required_data: str
-    recommended_action: str
-
-@dataclass
-class CalculationResult:
-    name: str
-    status: str
-    details: str
-    values: Dict[str, Any]
-
-# -----------------------------------------------------------------------------
-# Knowledge seeding and loading
-# -----------------------------------------------------------------------------
-
-def slugify(text: str) -> str:
-    return re.sub(r"[^a-zA-Z0-9_\-]+", "_", text.strip()).strip("_") or "item"
+    path: str
+    source_type: str
+    confidentiality: str
+    revision: str
+    tags: List[str]
+    text: str
+    quality: float = 1.0
 
 
-def seed_deep_knowledge(force: bool = False) -> None:
-    KNOWLEDGE_DIR.mkdir(exist_ok=True)
-    for workspace, files in KNOWLEDGE_SEED.items():
-        folder = KNOWLEDGE_DIR / workspace
-        folder.mkdir(parents=True, exist_ok=True)
-        for filename, content in files.items():
-            path = folder / filename
-            if force or not path.exists():
-                path.write_text(textwrap.dedent(content).strip() + "\n", encoding="utf-8")
-        notes = folder / "notes.md"
-        if force or not notes.exists():
-            notes.write_text(
-                f"# {workspace.replace('_', ' ').title()} Knowledge Pack\n\n"
-                "This workspace contains structured internal engineering reference notes. "
-                "Use it as guidance, not as certified calculation or standards compliance.\n",
-                encoding="utf-8",
-            )
+def chunk_text(text: str, size: int = 850, overlap: int = 120) -> List[str]:
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return []
+    chunks = []
+    i = 0
+    while i < len(text):
+        chunks.append(text[i:i+size])
+        i += max(1, size - overlap)
+    return chunks
 
 
-def strip_markdown(text: str) -> str:
-    text = re.sub(r"`{1,3}", "", text)
-    text = re.sub(r"^#+\s*", "", text, flags=re.MULTILINE)
-    text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
-    text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
-    return text.strip()
+def source_quality(source_type: str, confidentiality: str) -> float:
+    base = {
+        "Standards summary": 1.20,
+        "Design guide": 1.15,
+        "Public datasheet": 1.10,
+        "Supplier catalog": 1.00,
+        "Open reference": 0.95,
+        "Own engineering note": 0.90,
+        "Project reference": 0.85,
+        "Personal reference": 0.80,
+        "Team reference": 0.90,
+    }.get(source_type, 0.80)
+    if confidentiality in ["Private", "Confidential"]:
+        base += 0.05
+    return base
 
 
-def split_markdown_sections(text: str) -> List[Tuple[str, str]]:
-    lines = text.splitlines()
-    sections: List[Tuple[str, List[str]]] = []
-    current_title = "Overview"
-    current: List[str] = []
-    for line in lines:
-        if line.startswith("#"):
-            if current:
-                sections.append((strip_markdown(current_title), current))
-            current_title = strip_markdown(line)
-            current = []
-        else:
-            current.append(line)
-    if current or not sections:
-        sections.append((strip_markdown(current_title), current))
-    out: List[Tuple[str, str]] = []
-    for title, body in sections:
-        body_text = strip_markdown("\n".join(body))
-        if body_text:
-            out.append((title, body_text))
-    return out
-
-
-def tokenize(text: str) -> List[str]:
-    text = text.lower()
-    text = re.sub(r"[^a-z0-9+\-/%\.]+", " ", text)
-    tokens = [t for t in text.split() if len(t) > 1]
-    stop = {
-        "the", "and", "for", "with", "from", "this", "that", "into", "using", "used", "use", "are", "was",
-        "what", "how", "why", "can", "you", "your", "about", "create", "review", "plan", "setup", "design",
+def register_reference(workspace_id: str, project_id: str, uploaded, meta: Dict[str, str]) -> Dict[str, Any]:
+    p = project_dir(workspace_id, project_id)
+    ref_id = uuid.uuid4().hex[:10]
+    safe_name = slugify(Path(uploaded.name).stem, "reference") + Path(uploaded.name).suffix.lower()
+    raw_path = p / "references" / f"{ref_id}_{safe_name}"
+    raw_path.write_bytes(uploaded.getvalue())
+    text = extract_uploaded_text(uploaded)
+    text_path = p / "references" / f"{ref_id}_extracted.txt"
+    text_path.write_text(text, encoding="utf-8", errors="ignore")
+    rec = {
+        "reference_id": ref_id,
+        "filename": uploaded.name,
+        "stored_path": str(raw_path.relative_to(ROOT)),
+        "text_path": str(text_path.relative_to(ROOT)),
+        "title": meta.get("title") or uploaded.name,
+        "workspace": meta.get("workspace", "General engineering"),
+        "source_type": meta.get("source_type", "Project reference"),
+        "confidentiality": meta.get("confidentiality", "Private"),
+        "revision": meta.get("revision", "unspecified"),
+        "tags": [t.strip() for t in meta.get("tags", "").split(",") if t.strip()],
+        "legal_note": meta.get("legal_note", "User states they have the right to use this reference."),
+        "created_at": now_iso(),
     }
-    return [t for t in tokens if t not in stop]
+    add_memory_item(workspace_id, project_id, "references", rec)
+    return rec
 
 
-QUERY_EXPANSIONS = {
-    "mold": ["injection", "molding", "draft", "wall", "rib", "boss", "sink", "warpage", "shrinkage"],
-    "molded": ["injection", "molding", "draft", "wall", "rib", "boss", "sink", "warpage", "shrinkage"],
-    "plastic": ["thermoplastic", "abs", "pp", "pc", "nylon", "shrinkage", "wall"],
-    "cover": ["enclosure", "cosmetic", "snap", "boss", "rib"],
-    "bracket": ["fea", "static", "load", "constraint", "mesh", "stress"],
-    "ansys": ["fea", "static", "mesh", "apdl", "constraint", "contact"],
-    "fluent": ["cfd", "turbulence", "reynolds", "mesh", "y+", "boundary"],
-    "pipe": ["internal", "flow", "reynolds", "pressure", "drop"],
-    "solidworks": ["cad", "macro", "vba", "export", "step", "dxf"],
-    "macro": ["vba", "solidworks", "export", "validation"],
-    "shaft": ["torsion", "fatigue", "bearing", "keyway"],
-    "bearing": ["l10", "radial", "axial", "life"],
-}
-
-
-def expanded_query_tokens(query: str) -> List[str]:
-    base = tokenize(query)
-    expanded = list(base)
-    for t in base:
-        expanded.extend(QUERY_EXPANSIONS.get(t, []))
-    return expanded
-
-
-def workspace_folder(workspace_name: str) -> Optional[str]:
-    return WORKSPACES.get(workspace_name, {}).get("folder")
-
-
-def load_knowledge_chunks(project: str = "RD_Lab") -> List[SourceChunk]:
-    seed_deep_knowledge(force=False)
-    chunks: List[SourceChunk] = []
-    for folder in KNOWLEDGE_DIR.iterdir():
+def collect_global_sources() -> List[SourceChunk]:
+    sources: List[SourceChunk] = []
+    for folder in GLOBAL_KNOWLEDGE_DIR.iterdir():
         if not folder.is_dir():
             continue
-        for file in folder.glob("*.md"):
-            try:
-                text = file.read_text(encoding="utf-8", errors="ignore")
-            except Exception:
-                continue
-            for title, body in split_markdown_sections(text):
-                if len(body.strip()) < 40:
-                    continue
-                chunks.append(SourceChunk(folder.name, str(file.relative_to(ROOT)), title, body, 0.0, "knowledge_pack"))
-    # Project uploaded references, if any.
-    ref_dir = PROJECT_MEMORY_DIR / slugify(project) / "references_text"
-    if ref_dir.exists():
-        for file in ref_dir.glob("*.txt"):
-            try:
-                text = file.read_text(encoding="utf-8", errors="ignore")
-            except Exception:
-                continue
-            for i, part in enumerate(chunk_text(text, 1200, 120)):
-                chunks.append(SourceChunk("project_reference", str(file.relative_to(ROOT)), f"Uploaded reference chunk {i+1}", part, 0.0, "uploaded_reference"))
-    return chunks
+        workspace = next((k for k, v in WORKSPACES.items() if v["folder"] == folder.name), folder.name)
+        for f in folder.glob("*.md"):
+            raw = file_text(f)
+            for i, c in enumerate(chunk_text(raw)):
+                sources.append(SourceChunk(
+                    source_id=f"G-{folder.name}-{f.stem}-{i}",
+                    title=f.stem.replace("_", " ").title(),
+                    workspace=workspace,
+                    path=str(f.relative_to(ROOT)),
+                    source_type="Global knowledge pack",
+                    confidentiality="Public",
+                    revision="global",
+                    tags=[folder.name, f.stem],
+                    text=c,
+                    quality=1.0,
+                ))
+    return sources
 
 
-def chunk_text(text: str, size: int = 1400, overlap: int = 180) -> List[str]:
-    text = re.sub(r"\s+", " ", text).strip()
-    if len(text) <= size:
-        return [text] if text else []
-    chunks = []
-    start = 0
-    while start < len(text):
-        end = min(len(text), start + size)
-        chunks.append(text[start:end])
-        if end == len(text):
-            break
-        start = max(0, end - overlap)
-    return chunks
+def collect_project_sources(workspace_id: str, project_id: Optional[str]) -> List[SourceChunk]:
+    if not project_id:
+        return []
+    _, mem = load_project(workspace_id, project_id)
+    sources = []
+    for rec in mem.get("references", []):
+        text_path = ROOT / rec.get("text_path", "")
+        raw = file_text(text_path)
+        for i, c in enumerate(chunk_text(raw)):
+            sources.append(SourceChunk(
+                source_id=f"R-{rec.get('reference_id')}-{i}",
+                title=rec.get("title", "Reference"),
+                workspace=rec.get("workspace", "General engineering"),
+                path=rec.get("stored_path", ""),
+                source_type=rec.get("source_type", "Project reference"),
+                confidentiality=rec.get("confidentiality", "Private"),
+                revision=rec.get("revision", "unspecified"),
+                tags=rec.get("tags", []),
+                text=c,
+                quality=source_quality(rec.get("source_type", "Project reference"), rec.get("confidentiality", "Private")),
+            ))
+    return sources
 
 
-def retrieve(query: str, workspace_name: str, project: str = "RD_Lab", top_k: int = 6) -> List[SourceChunk]:
-    tokens = expanded_query_tokens(query)
-    if not tokens:
-        tokens = ["engineering"]
-    token_counts = Counter(tokens)
-    wanted_folder = workspace_folder(workspace_name)
-    routed_folder = route_workspace(query, workspace_name)[1]
-    chunks = load_knowledge_chunks(project)
-    scored: List[SourceChunk] = []
-    for ch in chunks:
-        text = f"{ch.workspace} {ch.title} {ch.text}".lower()
-        score = 0.0
-        for tok, count in token_counts.items():
-            if tok in text:
-                score += 1.0 * count
-                if tok in ch.title.lower():
-                    score += 1.5
-                if tok in ch.source.lower():
-                    score += 0.8
-        if wanted_folder and ch.workspace == wanted_folder:
-            score *= 1.35
-        if routed_folder and ch.workspace == routed_folder:
-            score *= 1.75
-        if ch.source_type == "uploaded_reference":
-            score *= 1.25
-        if score > 0:
-            scored.append(SourceChunk(ch.workspace, ch.source, ch.title, ch.text, round(score, 3), ch.source_type))
-    scored.sort(key=lambda x: x.score, reverse=True)
-    # Diversify by source file.
-    out: List[SourceChunk] = []
-    seen = set()
-    for item in scored:
-        key = item.source
-        if key not in seen:
-            out.append(item)
-            seen.add(key)
-        if len(out) >= top_k:
-            break
-    return out
+def expand_query(query: str, workspace: str, project_meta: Dict[str, Any]) -> str:
+    tokens = [query]
+    q = query.lower()
+    expansions = {
+        "Manufacturing / DFM": ["wall thickness draft ribs bosses tooling tolerance assembly process capability sink warpage cycle time quality"],
+        "Simulation / FEA": ["loads constraints contacts mesh convergence validation stress displacement failure criteria"],
+        "CFD / Thermal": ["reynolds turbulence y plus boundary conditions pressure drop heat transfer convergence mass balance"],
+        "CAD / SolidWorks": ["macro vba export step dxf drawing bom active document error handling validation"],
+        "Materials Selection": ["strength stiffness toughness density temperature corrosion manufacturability cost availability"],
+        "Product R&D / Design": ["load path material safety factor fatigue tolerance validation failure modes"],
+        "Innovation / Patent": ["novelty prior art claims prototype manufacturability commercial value"],
+    }
+    tokens.extend(expansions.get(workspace, []))
+    for k in ["part_type", "material", "process", "manufacturing_method", "target_use", "project_type"]:
+        v = project_meta.get(k)
+        if v:
+            tokens.append(str(v))
+    if any(w in q for w in ["plastic", "mold", "mould", "abs", "cover", "enclosure"]):
+        tokens.append("injection molding thermoplastics abs enclosure cover sink warpage draft ribs bosses")
+    if any(w in q for w in ["solidworks", "macro", "step", "dxf", "bom"]):
+        tokens.append("solidworks macro vba export step dxf bom drawing")
+    if any(w in q for w in ["ansys", "fea", "bracket", "stress", "modal", "buckling"]):
+        tokens.append("static structural fea mesh convergence loads constraints validation")
+    if any(w in q for w in ["cfd", "flow", "pipe", "reynolds", "thermal", "heat"]):
+        tokens.append("cfd thermal reynolds pressure drop turbulence heat transfer")
+    return " ".join(tokens)
+
+
+def retrieve_sources(query: str, workspace: str, project_meta: Dict[str, Any], workspace_id: str, project_id: Optional[str], k: int = 6) -> List[Tuple[float, SourceChunk]]:
+    query_expanded = expand_query(query, workspace, project_meta)
+    q_tokens = tokenize(query_expanded)
+    q_set = set(q_tokens)
+    candidates = collect_global_sources() + collect_project_sources(workspace_id, project_id)
+    scored: List[Tuple[float, SourceChunk]] = []
+    for s in candidates:
+        t = tokenize(s.title + " " + s.workspace + " " + " ".join(s.tags) + " " + s.text)
+        if not t:
+            continue
+        counter = {w: t.count(w) for w in set(t)}
+        score = sum(counter.get(w, 0) for w in q_set)
+        title_bonus = sum(3 for w in q_set if w in tokenize(s.title))
+        workspace_bonus = 5 if (workspace == s.workspace or workspace == "General engineering") else 0
+        folder = WORKSPACES.get(workspace, {}).get("folder")
+        path_bonus = 2 if folder and folder in s.path else 0
+        meta_bonus = 1.5 * len(q_set.intersection(set(tokenize(" ".join(s.tags)))))
+        final = (score + title_bonus + workspace_bonus + path_bonus + meta_bonus) * s.quality
+        if final > 0:
+            scored.append((final, s))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return scored[:k]
 
 # -----------------------------------------------------------------------------
-# Routing, ontology, reasoning
+# Routing, reasoning, scoring
 # -----------------------------------------------------------------------------
 
-ROUTE_KEYWORDS = [
-    ("CAD / SolidWorks", ["solidworks", "macro", "vba", "dxf", "step", "drawing", "bom", "cad"]),
-    ("Simulation / FEA", ["fea", "ansys", "static structural", "modal", "buckling", "mesh", "stress", "constraint", "bracket"]),
-    ("CFD / Thermal", ["cfd", "fluent", "flow", "reynolds", "pressure drop", "thermal", "heat", "y+", "turbulence"]),
-    ("Manufacturing / DFM", ["dfm", "dfa", "manufacturing", "injection", "molding", "molded", "sheet metal", "machining", "tooling", "tolerance", "assembly"]),
-    ("Materials Selection", ["material", "materials", "abs", "polypropylene", "nylon", "steel", "aluminum", "corrosion", "temperature"]),
-    ("Innovation / Patent", ["patent", "claim", "novel", "invention", "prior art", "triz", "prototype"]),
-    ("Product R&D / Design", ["shaft", "beam", "bearing", "gear", "spring", "fastener", "fatigue", "gd&t", "design"]),
-]
-
-
-def route_workspace(query: str, selected_workspace: str) -> Tuple[str, Optional[str]]:
+def route_workspace(query: str, selected: str) -> str:
     q = query.lower()
-    scores: Dict[str, int] = defaultdict(int)
-    for ws, keywords in ROUTE_KEYWORDS:
-        for kw in keywords:
-            if kw in q:
-                scores[ws] += 1 if " " not in kw else 2
-    if scores:
-        best = max(scores, key=scores.get)
-        return best, workspace_folder(best)
-    return selected_workspace, workspace_folder(selected_workspace)
+    rules = [
+        ("CAD / SolidWorks", ["solidworks", "macro", "vba", "step", "dxf", "bom", "drawing"]),
+        ("Simulation / FEA", ["fea", "ansys", "stress", "modal", "buckling", "mesh", "constraint", "bracket"]),
+        ("CFD / Thermal", ["cfd", "fluent", "flow", "pipe", "reynolds", "pressure drop", "heat", "thermal", "y+"]),
+        ("Manufacturing / DFM", ["dfm", "dfa", "manufacturing", "molding", "moulding", "machining", "sheet metal", "tooling", "assembly", "injection"]),
+        ("Materials Selection", ["material", "abs", "aluminum", "steel", "plastic", "polymer", "corrosion", "temperature"]),
+        ("Innovation / Patent", ["patent", "novel", "invention", "claim", "prior art", "triz"]),
+        ("Product R&D / Design", ["design", "shaft", "beam", "bearing", "gear", "spring", "fatigue", "tolerance"]),
+    ]
+    for ws, keys in rules:
+        if any(k in q for k in keys):
+            return ws
+    return selected
 
 
-def detect_problem_frame(query: str, selected_workspace: str) -> ProblemFrame:
-    routed_ws, _ = route_workspace(query, selected_workspace)
+def detect_missing_inputs(workspace: str, query: str, meta: Dict[str, Any]) -> List[str]:
     q = query.lower()
-    part = "not specified"
-    for name, kws in {
-        "cover/enclosure": ["cover", "enclosure", "lid", "housing"],
-        "bracket": ["bracket", "mount"],
-        "shaft": ["shaft"],
-        "beam": ["beam"],
-        "pipe/channel": ["pipe", "channel", "duct"],
-        "gear": ["gear"],
-        "spring": ["spring"],
-        "bearing": ["bearing"],
-    }.items():
-        if any(k in q for k in kws):
-            part = name
-            break
-    process = "not specified"
-    for name, kws in {
-        "injection molding": ["injection", "molded", "molding", "plastic cover"],
-        "sheet metal forming": ["sheet metal", "bend", "flange"],
-        "machining": ["machining", "cnc", "milling", "turning"],
-        "static structural simulation": ["static", "fea", "ansys", "stress"],
-        "internal fluid flow": ["pipe", "internal flow", "pressure drop"],
-        "cad automation": ["solidworks", "macro", "vba", "dxf", "step"],
-    }.items():
-        if any(k in q for k in kws):
-            process = name
-            break
-    material = "not specified"
-    materials = ["abs", "pp", "polypropylene", "pc", "polycarbonate", "pa", "nylon", "steel", "aluminum", "stainless", "peek", "pom"]
-    found_materials = [m.upper() if len(m) <= 4 else m for m in materials if m in q]
-    if found_materials:
-        material = ", ".join(sorted(set(found_materials)))
-    quantities = re.findall(r"\b\d+(?:\.\d+)?\s*(?:kn|n|nm|n\*m|mm|cm|m|mpa|gpa|rpm|m/s|kg|pa|bar|deg|°c|c)\b", q)
-    concepts = []
-    for concept in [
-        "function", "material family", "wall thickness", "draft", "ribs", "bosses", "shrinkage", "sink marks", "warpage", "parting line",
-        "loads", "constraints", "mesh", "contacts", "convergence", "validation", "reynolds", "pressure drop", "turbulence", "y+",
-        "tolerance", "assembly", "cost", "quality", "macro", "export", "drawing", "bom",
-    ]:
-        if concept in q or (concept == "wall thickness" and "wall" in q):
-            concepts.append(concept)
-    missing = missing_inputs_for(routed_ws, part, process, material, quantities, q)
-    confidence = confidence_level(missing, quantities, material, process)
-    return ProblemFrame(routed_ws, WORKSPACES[routed_ws]["agent"], part, process, material, quantities, concepts[:12], missing, confidence)
+    checks = {
+        "Manufacturing / DFM": [
+            ("material grade", meta.get("material") or any(x in q for x in ["abs", "pc", "pp", "steel", "aluminum"])),
+            ("nominal wall thickness / critical dimensions", bool(re.search(r"\d+(\.\d+)?\s*(mm|cm|inch|in)\b", q))),
+            ("CAD/STEP/drawing or geometry description", any(x in q for x in ["cad", "step", "drawing", "rib", "boss", "snap", "cover", "enclosure"])),
+            ("annual volume", meta.get("annual_volume") or re.search(r"\d+\s*(pcs|parts|units|year|yr)", q)),
+            ("surface finish / cosmetic requirement", any(x in q for x in ["surface", "texture", "cosmetic", "finish"])),
+        ],
+        "Simulation / FEA": [
+            ("study objective", any(x in q for x in ["static", "modal", "buckling", "fatigue", "thermal"])),
+            ("material properties", meta.get("material") or any(x in q for x in ["steel", "aluminum", "abs", "pa", "material"])),
+            ("loads", any(x in q for x in ["load", "force", "n", "kn", "pressure", "torque"])),
+            ("constraints / supports", any(x in q for x in ["fixed", "support", "constraint", "bolted"])),
+            ("validation target", any(x in q for x in ["validate", "test", "allowable", "limit"])),
+        ],
+        "CFD / Thermal": [
+            ("fluid and properties", any(x in q for x in ["water", "air", "oil", "density", "viscosity"])),
+            ("velocity or flow rate", any(x in q for x in ["m/s", "l/min", "flow", "velocity"])),
+            ("characteristic length / diameter", any(x in q for x in ["diameter", "pipe", "mm", "meter", "length"])),
+            ("boundary conditions", any(x in q for x in ["inlet", "outlet", "wall", "pressure", "temperature"])),
+            ("validation target", any(x in q for x in ["pressure drop", "temperature", "heat", "validate"])),
+        ],
+        "Materials Selection": [
+            ("functional requirements", any(x in q for x in ["strength", "stiff", "impact", "temperature", "chemical", "corrosion"])),
+            ("manufacturing process", meta.get("process") or any(x in q for x in ["molding", "machining", "sheet", "weld", "casting"])),
+            ("cost/availability target", any(x in q for x in ["cost", "cheap", "available", "supplier"])),
+        ],
+        "CAD / SolidWorks": [
+            ("document type: part/assembly/drawing", any(x in q for x in ["part", "assembly", "drawing"])),
+            ("workflow goal", any(x in q for x in ["export", "create", "bom", "dxf", "step", "pdf"])),
+            ("file naming / output path", any(x in q for x in ["folder", "path", "name", "save"])),
+        ],
+    }
+    return [name for name, ok in checks.get(workspace, []) if not ok]
 
 
-def missing_inputs_for(workspace: str, part: str, process: str, material: str, quantities: List[str], q: str) -> List[str]:
-    base: List[str] = []
-    if workspace == "Manufacturing / DFM":
-        base = ["CAD image/STEP", "material grade", "nominal wall thickness", "production volume", "critical tolerances", "surface/cosmetic class", "assembly method"]
-        if "injection" in process:
-            base.extend(["rib and boss geometry", "draft target", "gate/ejector constraints", "parting line preference"])
-    elif workspace == "Simulation / FEA":
-        base = ["CAD geometry", "material model", "loads", "constraints", "contacts", "mesh strategy", "acceptance criteria", "validation method"]
-    elif workspace == "CFD / Thermal":
-        base = ["fluid properties", "domain geometry", "velocity/flow rate", "boundary conditions", "mesh/y+ target", "convergence criteria", "validation method"]
-    elif workspace == "Materials Selection":
-        base = ["function", "loads", "temperature", "environment/chemical exposure", "process", "cost target", "availability" ]
-    elif workspace == "CAD / SolidWorks":
-        base = ["SolidWorks version", "document type", "input folder", "output folder", "file naming convention", "overwrite policy", "backup policy"]
-    elif workspace == "Product R&D / Design":
-        base = ["function", "loads", "constraints", "material", "safety factor", "manufacturing process", "validation plan"]
-    elif workspace == "Innovation / Patent":
-        base = ["problem statement", "closest alternatives", "novel mechanism", "prototype evidence", "target market", "prior-art keywords"]
-    else:
-        base = ["objective", "function", "loads", "material", "geometry", "process", "validation criteria"]
-    present = set()
-    if material != "not specified":
-        present.add("material grade")
-        present.add("material")
-    if quantities:
-        for name in ["loads", "nominal wall thickness", "velocity/flow rate", "production volume"]:
-            present.add(name)
-    if any(w in q for w in ["step", "cad", "image", "drawing"]):
-        present.add("CAD image/STEP")
-        present.add("CAD geometry")
-        present.add("geometry")
-    return [x for x in base if x not in present][:12]
+def input_maturity(workspace: str, query: str, meta: Dict[str, Any]) -> Tuple[int, str]:
+    missing = detect_missing_inputs(workspace, query, meta)
+    total = max(5, len(missing) + 2)
+    known = max(0, total - len(missing))
+    # Bonus for project metadata
+    bonus_fields = ["part_type", "material", "process", "annual_volume", "target_use"]
+    bonus = sum(1 for f in bonus_fields if meta.get(f))
+    score = min(100, int((known / total) * 70 + bonus * 6))
+    label = "Preliminary only" if score < 45 else "Developing" if score < 70 else "Review-ready" if score < 85 else "Strong input maturity"
+    return score, label
 
 
-def confidence_level(missing: List[str], quantities: List[str], material: str, process: str) -> str:
-    score = 100
-    score -= min(60, len(missing) * 7)
-    if not quantities:
-        score -= 12
-    if material == "not specified":
-        score -= 10
-    if process == "not specified":
-        score -= 8
-    if score >= 75:
+def confidence_level(maturity_score: int, retrieved_count: int, calc_count: int) -> str:
+    raw = maturity_score + retrieved_count * 4 + calc_count * 6
+    if raw >= 90:
         return "High"
-    if score >= 50:
+    if raw >= 70:
+        return "Medium-high"
+    if raw >= 50:
         return "Medium"
-    if score >= 30:
+    if raw >= 35:
         return "Low-to-medium"
     return "Low"
 
 
-REASONING_PROTOCOLS = {
-    "Manufacturing / DFM": [
-        "Identify process family, material family, production volume, and surface/function requirements.",
-        "Map geometry to process capability, tooling, cycle time, and defect modes.",
-        "Score risks for wall thickness, draft, ribs/bosses, tooling, tolerance, assembly, quality, and cost.",
-        "Rank corrective actions by risk reduction, cost impact, and ease of implementation.",
-    ],
-    "CAD / SolidWorks": [
-        "Clarify document type, units, target geometry, output files, naming, and overwrite policy.",
-        "Separate geometry creation, feature creation, drawing, BOM, export, and validation.",
-        "Generate clean macro structure with error handling and user-visible run instructions.",
-        "Validate destructive operations and file paths before execution.",
-    ],
-    "Simulation / FEA": [
-        "Define simulation objective, physics, acceptance criterion, and decision supported.",
-        "Check loads, constraints, contacts, material model, element type, mesh, and convergence.",
-        "Plan validation using hand calculation, benchmark, or test evidence.",
-        "Interpret plots only after assumptions, boundary conditions, and convergence are verified.",
-    ],
-    "CFD / Thermal": [
-        "Define domain, flow regime, fluid properties, boundary conditions, and heat sources.",
-        "Check Reynolds number, turbulence model, mesh/y+, convergence, and conservation balances.",
-        "Validate using analytical pressure drop/heat transfer estimates or test data.",
-    ],
-    "Materials Selection": [
-        "Translate function into constraints, objectives, and free variables.",
-        "Screen materials by temperature, load, environment, process, cost, and availability.",
-        "Rank candidates and validate with supplier datasheets and tests.",
-    ],
-    "Product R&D / Design": [
-        "Clarify function, loads, constraints, materials, failure modes, manufacturing process, and validation.",
-        "Perform sanity calculations before detailed CAD/FEA.",
-        "Rank design risks and define next experiments/tests.",
-    ],
-    "Innovation / Patent": [
-        "Separate novelty, usefulness, feasibility, manufacturability, and commercial value.",
-        "Map prior-art search terms and closest alternatives.",
-        "Convert concept into testable prototype requirements and claim hypotheses.",
-    ],
-    "General engineering": [
-        "Classify engineering domain and objective.",
-        "Extract known inputs and missing data.",
-        "Retrieve internal sources and apply the nearest workspace protocol.",
-    ],
-}
-
-# -----------------------------------------------------------------------------
-# Risk and scoring engines
-# -----------------------------------------------------------------------------
-
-RISK_ORDER = {"Low": 1, "Medium": 2, "High": 3, "Unknown": 2}
+def release_gate(maturity_score: int, high_risks: int, unknowns: int) -> str:
+    if high_risks >= 3 or maturity_score < 35:
+        return "Engineering hold — preliminary only"
+    if unknowns >= 3 or maturity_score < 60:
+        return "Conditional pass — more inputs required before release"
+    if high_risks == 0 and unknowns <= 1 and maturity_score >= 75:
+        return "Review pass — suitable for next engineering gate"
+    return "Conditional pass — verify risks before release"
 
 
-def build_risk_matrix(frame: ProblemFrame, query: str) -> List[RiskItem]:
-    ws = frame.workspace
-    missing = set(frame.missing_inputs)
-    risks: List[RiskItem] = []
-    if ws == "Manufacturing / DFM":
-        risks = [
-            RiskItem("Wall thickness", "High" if "nominal wall thickness" in missing else "Medium", "Injection molding requires uniform wall and no nominal thickness was confirmed.", "Nominal wall thickness, material grade", "Keep wall uniform; avoid abrupt thick sections; validate sink/warpage."),
-            RiskItem("Draft", "Medium" if "draft target" in missing else "Low", "Mold release needs draft on vertical walls, ribs and bosses.", "Draft target and cosmetic faces", "Add draft early and align parting direction with tooling strategy."),
-            RiskItem("Ribs / bosses", "High" if "rib and boss geometry" in missing else "Medium", "Covers often use bosses/ribs; thick bosses can create sink and cycle-time penalties.", "Rib thickness, boss OD/ID, screw loads", "Use ribs for stiffness; core bosses; avoid thick intersections."),
-            RiskItem("Tooling / parting", "Medium" if "parting line preference" in missing else "Low", "Parting line, gates, and ejectors control appearance and manufacturing stability.", "Gate/ejector constraints, parting preference", "Define cosmetic surfaces and gate/ejector zones before tooling."),
-            RiskItem("Tolerance capability", "Unknown" if "critical tolerances" in missing else "Medium", "No critical dimensions or process capability were defined.", "CTQ dimensions and tolerances", "Link tolerances to function and process capability."),
-            RiskItem("Assembly / DFA", "Unknown" if "assembly method" in missing else "Medium", "Mating parts, fasteners and snap-fits are unknown.", "Assembly method and mating geometry", "Review snap-fit, screw bosses, access and serviceability."),
-            RiskItem("Quality plan", "Medium", "Sink, warpage, flash and dimensional variation are likely control points.", "Inspection method and CTQs", "Define CTQ dimensions and first-article inspection plan."),
-        ]
-    elif ws == "Simulation / FEA":
-        risks = [
-            RiskItem("Objective", "Medium" if "acceptance criteria" in missing else "Low", "Simulation purpose and acceptance criteria must be explicit.", "Decision supported and pass/fail criteria", "Define what engineering decision this FEA supports."),
-            RiskItem("Loads", "High" if "loads" in missing else "Medium", "Loads drive stress/deflection; missing or idealized loads reduce credibility.", "Load magnitude, direction, distribution", "Document load case and compare with hand estimate."),
-            RiskItem("Constraints", "High" if "constraints" in missing else "Medium", "Boundary conditions often dominate FEA results.", "Support/contact constraints", "Use physically realistic constraints and sensitivity checks."),
-            RiskItem("Mesh convergence", "High" if "mesh strategy" in missing else "Medium", "Unconverged stress results are not release-ready.", "Element type and convergence plan", "Run mesh refinement for quantity of interest."),
-            RiskItem("Validation", "High" if "validation method" in missing else "Medium", "Simulation must be validated against hand/test/benchmark evidence.", "Validation method", "Plan hand calculation or test correlation."),
-        ]
-    elif ws == "CFD / Thermal":
-        risks = [
-            RiskItem("Flow regime", "High" if "fluid properties" in missing or "velocity/flow rate" in missing else "Medium", "Reynolds number cannot be classified without fluid and velocity data.", "Fluid, density, viscosity, velocity, length", "Compute Reynolds number before model choice."),
-            RiskItem("Boundary conditions", "High" if "boundary conditions" in missing else "Medium", "CFD results are highly boundary-condition sensitive.", "Inlets/outlets/walls/thermal BCs", "Define physical boundary conditions and conservation checks."),
-            RiskItem("Mesh/y+", "High" if "mesh/y+ target" in missing else "Medium", "Wall treatment must match turbulence model and mesh.", "y+ target, inflation layers", "Check y+ after solution and refine mesh."),
-            RiskItem("Validation", "High" if "validation method" in missing else "Medium", "CFD requires analytical or experimental sanity checks.", "Pressure/temperature/flow validation", "Compare with correlations or test data."),
-        ]
-    elif ws == "Materials Selection":
-        risks = [
-            RiskItem("Functional constraints", "High" if "function" in missing else "Medium", "Material choice cannot be made without function and constraints.", "Function, load, environment", "Define hard constraints before ranking materials."),
-            RiskItem("Thermal/environment", "Medium" if "temperature" in missing else "Low", "Temperature and chemicals can invalidate material choice.", "Temperature and exposure", "Screen materials by temperature and environment."),
-            RiskItem("Process compatibility", "High" if "process" in missing else "Medium", "Material must match manufacturing process.", "Process and volume", "Filter candidates by process and supplier availability."),
-        ]
-    elif ws == "CAD / SolidWorks":
-        risks = [
-            RiskItem("Overwrite/file safety", "High" if "overwrite policy" in missing else "Medium", "Automation can overwrite files if policy is unclear.", "Output folder and overwrite policy", "Default to non-destructive export and logs."),
-            RiskItem("Document validation", "Medium" if "document type" in missing else "Low", "Macro behavior depends on part/assembly/drawing type.", "Document type", "Validate active document before running."),
-            RiskItem("Path/naming", "Medium" if "file naming convention" in missing else "Low", "Export workflows need deterministic names and paths.", "Naming convention and output folder", "Use safe filenames and user-selected folder."),
-        ]
-    else:
-        risks = [
-            RiskItem("Problem definition", "Medium", "The engineering objective is not fully specified.", "Objective, constraints, inputs", "Clarify objective and required decision."),
-            RiskItem("Validation", "High", "No validation method has been defined.", "Test/calculation/inspection evidence", "Define validation before release."),
-        ]
-    return risks
-
-
-def risk_score(risks: List[RiskItem], frame: ProblemFrame) -> Tuple[int, str]:
-    if not risks:
-        return 50, "Unknown"
-    penalty = 0
-    for r in risks:
-        penalty += {"High": 12, "Medium": 7, "Low": 3, "Unknown": 9}.get(r.risk, 6)
-    penalty += min(20, len(frame.missing_inputs) * 2)
-    score = max(5, min(95, 100 - penalty))
-    if score >= 80:
-        level = "Low risk / strong readiness"
-    elif score >= 65:
-        level = "Medium risk"
-    elif score >= 45:
-        level = "Medium-high risk"
-    else:
-        level = "High risk / low readiness"
-    return score, level
-
-
-def workspace_score_name(ws: str) -> str:
-    return {
-        "Manufacturing / DFM": "DFM Score",
-        "CAD / SolidWorks": "CAD Automation Readiness Score",
-        "Simulation / FEA": "FEA Setup Quality Score",
-        "CFD / Thermal": "CFD Setup Quality Score",
-        "Materials Selection": "Material Suitability Readiness Score",
-        "Innovation / Patent": "Patent Novelty Readiness Score",
-        "Product R&D / Design": "Mechanical Design Readiness Score",
-    }.get(ws, "Engineering Readiness Score")
-
-# -----------------------------------------------------------------------------
-# Engineering calculators and validators
-# -----------------------------------------------------------------------------
-
-def find_value(query: str, patterns: List[str]) -> Optional[float]:
-    q = query.lower().replace("×", "x")
-    for pat in patterns:
-        m = re.search(pat, q)
-        if m:
-            try:
-                return float(m.group(1))
-            except Exception:
-                pass
-    return None
-
-
-def engineering_calculators(query: str, frame: ProblemFrame) -> List[CalculationResult]:
+def risk_matrix(workspace: str, query: str, meta: Dict[str, Any]) -> List[Dict[str, str]]:
     q = query.lower()
-    results: List[CalculationResult] = []
-    # Beam check
-    if any(k in q for k in ["beam", "deflection", "bending"]):
-        P = find_value(q, [r"(?:load|p)\s*=\s*(\d+(?:\.\d+)?)\s*n", r"(\d+(?:\.\d+)?)\s*n\s*(?:load)?"])
-        Lmm = find_value(q, [r"(?:span|length|l)\s*=\s*(\d+(?:\.\d+)?)\s*mm", r"(\d+(?:\.\d+)?)\s*mm\s*(?:span|long|length)"])
-        EGPa = find_value(q, [r"(?:e|modulus)\s*=\s*(\d+(?:\.\d+)?)\s*gpa"])
-        Imm4 = find_value(q, [r"(?:i)\s*=\s*(\d+(?:\.\d+)?)\s*mm", r"i\s*=\s*(\d+(?:\.\d+)?)"])
-        if P and Lmm and EGPa and Imm4:
-            delta = P * (Lmm**3) / (48 * (EGPa * 1000) * Imm4)
-            results.append(CalculationResult("Beam center-load deflection", "computed", f"Simply supported estimate: delta = {delta:.3f} mm using P L^3/(48 E I).", {"P_N": P, "L_mm": Lmm, "E_GPa": EGPa, "I_mm4": Imm4, "delta_mm": delta}))
-        else:
-            results.append(CalculationResult("Beam bending/deflection", "missing inputs", "Provide load P [N], span L [mm], E [GPa], and I [mm^4] for deterministic beam check.", {}))
-    # Shaft torsion
-    if "shaft" in q or "torsion" in q:
-        T = find_value(q, [r"(?:torque|t)\s*=\s*(\d+(?:\.\d+)?)\s*(?:n\s*m|nm)", r"(\d+(?:\.\d+)?)\s*(?:n\s*m|nm)"])
-        dmm = find_value(q, [r"(?:diameter|d)\s*=\s*(\d+(?:\.\d+)?)\s*mm", r"(\d+(?:\.\d+)?)\s*mm\s*(?:diameter|dia)"])
-        if T and dmm:
-            tau = 16 * (T * 1000) / (math.pi * dmm**3)
-            results.append(CalculationResult("Solid shaft torsion", "computed", f"tau_max = {tau:.2f} MPa using 16T/(pi d^3).", {"T_Nm": T, "d_mm": dmm, "tau_MPa": tau}))
-        else:
-            results.append(CalculationResult("Shaft torsion", "missing inputs", "Provide torque [N·m] and shaft diameter [mm] for torsional stress check.", {}))
-    # Reynolds
-    if any(k in q for k in ["reynolds", "pipe", "flow", "pressure drop", "cfd"]):
-        rho = find_value(q, [r"rho\s*=\s*(\d+(?:\.\d+)?)", r"density\s*=\s*(\d+(?:\.\d+)?)"])
-        V = find_value(q, [r"(?:velocity|v)\s*=\s*(\d+(?:\.\d+)?)\s*m/s", r"(\d+(?:\.\d+)?)\s*m/s"])
-        Dmm = find_value(q, [r"(?:diameter|d)\s*=\s*(\d+(?:\.\d+)?)\s*mm", r"(\d+(?:\.\d+)?)\s*mm\s*(?:pipe|diameter|dia)"])
-        mu = find_value(q, [r"(?:mu|viscosity)\s*=\s*(\d+(?:\.\d+)?)"])
-        if V and Dmm:
-            rho = rho or 998.0
-            mu = mu or 0.001
-            Re = rho * V * (Dmm / 1000) / mu
-            regime = "laminar" if Re < 2300 else "transitional" if Re < 4000 else "turbulent"
-            results.append(CalculationResult("Reynolds number", "computed", f"Re ≈ {Re:,.0f}; regime: {regime}. Defaults used if fluid data missing: water near room temperature.", {"rho": rho, "V_mps": V, "D_mm": Dmm, "mu_Pa_s": mu, "Re": Re, "regime": regime}))
-        else:
-            results.append(CalculationResult("Reynolds number", "missing inputs", "Provide velocity [m/s] and diameter [mm]; density and viscosity optional but recommended.", {}))
-    # Sheet metal bend
-    if "sheet" in q or "bend" in q:
-        t = find_value(q, [r"(?:thickness|t)\s*=\s*(\d+(?:\.\d+)?)\s*mm"])
-        R = find_value(q, [r"(?:radius|r)\s*=\s*(\d+(?:\.\d+)?)\s*mm"])
-        A = find_value(q, [r"(?:angle|a)\s*=\s*(\d+(?:\.\d+)?)"])
-        K = find_value(q, [r"(?:k)\s*=\s*(\d+(?:\.\d+)?)"])
-        if t and R and A:
-            K = K or 0.33
-            BA = math.radians(A) * (R + K * t)
-            results.append(CalculationResult("Sheet metal bend allowance", "computed", f"Bend allowance ≈ {BA:.2f} mm using BA = angle_rad*(R+K*t).", {"t_mm": t, "R_mm": R, "angle_deg": A, "K": K, "BA_mm": BA}))
-        else:
-            results.append(CalculationResult("Sheet metal bend allowance", "missing inputs", "Provide thickness, inside radius, bend angle, and optional K-factor.", {}))
-    # Bearing L10
-    if "bearing" in q or "l10" in q:
-        C = find_value(q, [r"(?:c)\s*=\s*(\d+(?:\.\d+)?)\s*n", r"dynamic rating\s*=\s*(\d+(?:\.\d+)?)"])
-        P = find_value(q, [r"(?:equivalent load|p)\s*=\s*(\d+(?:\.\d+)?)\s*n"])
-        rpm = find_value(q, [r"(?:rpm|speed)\s*=\s*(\d+(?:\.\d+)?)"])
-        if C and P and rpm:
-            L10_mrev = (C / P) ** 3
-            L10_h = L10_mrev * 1e6 / (60 * rpm)
-            results.append(CalculationResult("Bearing L10 life", "computed", f"Ball bearing estimate: L10 ≈ {L10_mrev:.2f} million rev, {L10_h:.1f} hours.", {"C_N": C, "P_N": P, "rpm": rpm, "L10_mrev": L10_mrev, "L10_hours": L10_h}))
-        else:
-            results.append(CalculationResult("Bearing L10 life", "missing inputs", "Provide dynamic rating C [N], equivalent load P [N], and speed [rpm].", {}))
-    # Injection molding wall/rib quick check
-    if any(k in q for k in ["injection", "mold", "molded", "plastic"]):
-        wall = find_value(q, [r"(?:wall|thickness)\s*=\s*(\d+(?:\.\d+)?)\s*mm", r"(\d+(?:\.\d+)?)\s*mm\s*wall"])
-        rib = find_value(q, [r"(?:rib)\s*=\s*(\d+(?:\.\d+)?)\s*mm", r"rib\s*thickness\s*(?:is|=)?\s*(\d+(?:\.\d+)?)"])
-        if wall:
-            msg = f"Nominal wall thickness provided: {wall:.2f} mm. Check uniformity, sink, flow length, material-specific recommendations, and tolerance stability."
-            values = {"wall_mm": wall}
-            if rib:
-                ratio = rib / wall
-                risk = "higher sink risk" if ratio > 0.65 else "typical preliminary rib ratio"
-                msg += f" Rib/wall ratio = {ratio:.2f}; {risk}."
-                values["rib_mm"] = rib
-                values["rib_wall_ratio"] = ratio
-            results.append(CalculationResult("Injection molding wall/rib sanity check", "computed", msg, values))
-        else:
-            results.append(CalculationResult("Injection molding wall/rib check", "missing inputs", "Provide nominal wall thickness and rib/boss dimensions for deterministic molding DFM checks.", {}))
-    return results
+    if workspace == "Manufacturing / DFM":
+        rows = [
+            ("Wall thickness", "High" if not re.search(r"\d+(\.\d+)?\s*mm", q) else "Medium", "No nominal wall thickness was provided."),
+            ("Draft / ejection", "Medium", "Injection molded parts require release angle and ejection planning."),
+            ("Ribs / bosses", "High" if any(x in q for x in ["cover", "enclosure", "boss", "rib"]) else "Medium", "Covers often require stiffness and mounting features; thick bosses create sink risk."),
+            ("Tooling strategy", "Medium", "Gate, parting line and ejector strategy are not defined."),
+            ("Tolerance capability", "Unknown", "CTQ dimensions and tolerance limits are missing."),
+            ("Assembly / DFA", "Unknown", "Mating parts and assembly method are not defined."),
+        ]
+    elif workspace == "Simulation / FEA":
+        rows = [
+            ("Objective", "Medium", "Study type and pass/fail criteria must be explicit."),
+            ("Loads", "Medium" if any(x in q for x in ["load", "force", "kn", "n"]) else "High", "Loads are incomplete or need verification."),
+            ("Constraints", "High" if not any(x in q for x in ["fixed", "support", "constraint"]) else "Medium", "Incorrect constraints can invalidate FEA."),
+            ("Contacts", "Unknown", "Contact/bonding assumptions are not defined."),
+            ("Mesh convergence", "High", "No convergence plan provided."),
+            ("Validation", "High", "No hand calculation or test correlation target provided."),
+        ]
+    elif workspace == "CFD / Thermal":
+        rows = [
+            ("Flow regime", "Medium" if any(x in q for x in ["reynolds", "water", "air", "m/s"]) else "High", "Flow regime drives model selection."),
+            ("Boundary conditions", "High" if not any(x in q for x in ["inlet", "outlet", "wall", "temperature"]) else "Medium", "CFD is highly sensitive to boundary conditions."),
+            ("Turbulence model", "Medium", "Model should be justified by Re, y+ and separation risk."),
+            ("Mesh / y+", "High", "No wall-resolution target or mesh plan provided."),
+            ("Convergence", "Medium", "Residual and balance targets are not specified."),
+            ("Validation", "High", "No analytical or experimental reference defined."),
+        ]
+    elif workspace == "CAD / SolidWorks":
+        rows = [
+            ("Document safety", "High", "Macro must guard against no active document and wrong document type."),
+            ("File overwrite", "High", "Output path and overwrite behavior must be controlled."),
+            ("Error handling", "Medium", "Macro should include explicit error handling and logging."),
+            ("Workflow completeness", "Medium", "Export, drawing/BOM and naming convention must be clarified."),
+        ]
+    elif workspace == "Materials Selection":
+        rows = [
+            ("Functional requirements", "High", "Material cannot be selected from material name alone."),
+            ("Environment", "Medium", "Temperature, chemicals and UV exposure are not fully defined."),
+            ("Manufacturing compatibility", "Medium", "Process compatibility must be checked."),
+            ("Availability / cost", "Unknown", "Supplier and cost targets are missing."),
+        ]
+    else:
+        rows = [
+            ("Requirements clarity", "Medium", "Function, loads and constraints are partially defined."),
+            ("Validation plan", "High", "Verification method is not specified."),
+            ("Manufacturing compatibility", "Medium", "Process constraints are not fully defined."),
+        ]
+    return [{"Area": a, "Risk": r, "Reason": reason} for a, r, reason in rows]
+
+
+def score_from_risks(rows: List[Dict[str, str]], base: int = 100) -> int:
+    penalty = {"High": 14, "Medium": 8, "Low": 3, "Unknown": 10}
+    s = base - sum(penalty.get(r.get("Risk", "Medium"), 6) for r in rows)
+    return max(0, min(100, s))
 
 # -----------------------------------------------------------------------------
-# CAD / Simulation artifact builders
+# Engineering calculators
 # -----------------------------------------------------------------------------
 
-def generate_solidworks_macro(task: str) -> str:
-    return f"""' MechAI Pro generated SolidWorks VBA macro skeleton
-' Task: {task}
-' Safety: Review all paths and backup files before running.
-Option Explicit
+def calc_beam_center_load(P: float, L: float, E: float, I: float) -> Dict[str, float]:
+    return {"M_max_Nm": P * L / 4, "deflection_m": P * L**3 / (48 * E * I)}
+
+
+def calc_shaft_torsion(T: float, d: float, L: float, G: float) -> Dict[str, float]:
+    J = math.pi * d**4 / 32
+    tau = 16 * T / (math.pi * d**3)
+    theta = T * L / (J * G)
+    return {"polar_J_m4": J, "tau_Pa": tau, "twist_rad": theta, "twist_deg": theta * 180 / math.pi}
+
+
+def calc_bearing_l10(C: float, P: float, rpm: float, p_exp: float = 3.0) -> Dict[str, float]:
+    L10_mrev = (C / P) ** p_exp
+    L10_h = (1e6 / (60 * rpm)) * L10_mrev
+    return {"L10_million_rev": L10_mrev, "L10_hours": L10_h}
+
+
+def calc_reynolds(rho: float, V: float, D: float, mu: float) -> Dict[str, Any]:
+    Re = rho * V * D / mu
+    regime = "Laminar" if Re < 2300 else "Transitional" if Re < 4000 else "Turbulent"
+    return {"Re": Re, "regime": regime}
+
+
+def calc_pressure_drop(f: float, L: float, D: float, rho: float, V: float, k_minor: float = 0.0) -> Dict[str, float]:
+    dynamic = rho * V**2 / 2
+    dp = (f * L / D + k_minor) * dynamic
+    return {"dynamic_pressure_Pa": dynamic, "deltaP_Pa": dp}
+
+
+def calc_heat_transfer(h: float, A: float, dT: float) -> Dict[str, float]:
+    return {"q_W": h * A * dT}
+
+
+def calc_sheet_metal_bend(angle_deg: float, radius: float, thickness: float, k_factor: float) -> Dict[str, float]:
+    ba = math.radians(angle_deg) * (radius + k_factor * thickness)
+    return {"bend_allowance_mm": ba}
+
+
+def calc_fastener_preload(proof_load_N: float, preload_fraction: float = 0.75) -> Dict[str, float]:
+    return {"recommended_preload_N": proof_load_N * preload_fraction}
+
+
+def calc_spring_rate(G: float, wire_d: float, mean_D: float, active_coils: float) -> Dict[str, float]:
+    k = G * wire_d**4 / (8 * mean_D**3 * active_coils)
+    return {"spring_rate_N_per_m": k}
+
+
+def injection_molding_check(wall_mm: Optional[float], rib_mm: Optional[float], boss_mm: Optional[float]) -> List[Dict[str, str]]:
+    out = []
+    if wall_mm is None:
+        out.append({"Check": "Wall thickness", "Status": "Unknown", "Advice": "Provide nominal wall thickness."})
+    else:
+        status = "Review" if wall_mm < 1.0 or wall_mm > 4.0 else "Preliminary OK"
+        out.append({"Check": "Wall thickness", "Status": status, "Advice": "Keep wall uniform and verify material-specific range."})
+    if rib_mm is not None and wall_mm:
+        ratio = rib_mm / wall_mm
+        out.append({"Check": "Rib thickness ratio", "Status": "High risk" if ratio > 0.7 else "Preliminary OK", "Advice": "Ribs are often kept thinner than wall to reduce sink; validate by material/tooling."})
+    if boss_mm is not None and wall_mm:
+        ratio = boss_mm / wall_mm
+        out.append({"Check": "Boss thickness ratio", "Status": "High risk" if ratio > 1.0 else "Review", "Advice": "Avoid thick bosses; use cored bosses and supporting ribs."})
+    return out
+
+
+def parse_basic_numbers_for_calcs(query: str) -> List[Dict[str, Any]]:
+    q = query.lower()
+    calcs = []
+    # Reynolds: water in 20 mm pipe at 1 m/s
+    m_d = re.search(r"(\d+(?:\.\d+)?)\s*mm", q)
+    m_v = re.search(r"(\d+(?:\.\d+)?)\s*m/s", q)
+    if any(x in q for x in ["reynolds", "pipe", "flow"]) and m_d and m_v:
+        D = float(m_d.group(1)) / 1000
+        V = float(m_v.group(1))
+        rho = 1000.0 if "water" in q else 1.225 if "air" in q else 1000.0
+        mu = 0.001 if "water" in q else 1.81e-5 if "air" in q else 0.001
+        calcs.append({"name": "Reynolds number", "result": calc_reynolds(rho, V, D, mu)})
+    return calcs
+
+# -----------------------------------------------------------------------------
+# CAD and simulation artifacts
+# -----------------------------------------------------------------------------
+
+def generate_solidworks_macro(workflow: str, project_name: str = "MechAI_Project") -> str:
+    workflow_comment = workflow.replace("'", "")[:200]
+    return f'''Option Explicit
+
+' MechAI Pro generated SolidWorks VBA macro skeleton
+' Project: {project_name}
+' Workflow intent: {workflow_comment}
+' Safety: Review paths and backup files before running.
 
 Dim swApp As SldWorks.SldWorks
 Dim swModel As SldWorks.ModelDoc2
+Dim swExt As SldWorks.ModelDocExtension
 Dim errors As Long
 Dim warnings As Long
 
@@ -1594,227 +987,136 @@ Sub main()
     On Error GoTo EH
     Set swApp = Application.SldWorks
     Set swModel = swApp.ActiveDoc
-    
     If swModel Is Nothing Then
-        MsgBox "No active SolidWorks document found.", vbExclamation
+        MsgBox "No active SolidWorks document. Open a part/assembly/drawing first.", vbCritical
         Exit Sub
     End If
-    
-    Dim docPath As String
-    docPath = swModel.GetPathName
-    If docPath = "" Then
-        MsgBox "Please save the document before export.", vbExclamation
-        Exit Sub
-    End If
-    
-    Dim folder As String
-    folder = Left(docPath, InStrRev(docPath, "\\"))
-    
-    Dim baseName As String
-    baseName = Mid(docPath, InStrRev(docPath, "\\") + 1)
-    baseName = Left(baseName, InStrRev(baseName, ".") - 1)
-    
-    ' Export STEP
-    swModel.Extension.SaveAs folder & baseName & ".STEP", 0, 0, Nothing, errors, warnings
-    
-    ' Export DXF placeholder: for sheet-metal flat patterns, replace with flat pattern export API.
-    ' swModel.Extension.SaveAs folder & baseName & ".DXF", 0, 0, Nothing, errors, warnings
-    
-    MsgBox "Export routine completed. Check output folder and warnings.", vbInformation
+    Set swExt = swModel.Extension
+
+    Dim docTitle As String
+    docTitle = swModel.GetTitle
+
+    Dim outFolder As String
+    outFolder = Environ$("USERPROFILE") & "\\Desktop\\MechAI_Exports"
+    If Dir(outFolder, vbDirectory) = "" Then MkDir outFolder
+
+    ' TODO: customize naming convention and workflow here.
+    ' Example STEP export:
+    Dim stepPath As String
+    stepPath = outFolder & "\\" & docTitle & ".step"
+    swExt.SaveAs stepPath, 0, 0, Nothing, errors, warnings
+
+    ' Example drawing/DXF/BOM automation should be added according to document type.
+    MsgBox "MechAI macro completed. Check export folder: " & outFolder, vbInformation
     Exit Sub
 EH:
     MsgBox "Macro failed: " & Err.Description, vbCritical
 End Sub
-"""
+'''
 
 
-def validate_macro(macro: str) -> List[str]:
-    checks = []
-    checks.append("PASS: Contains Option Explicit." if "Option Explicit" in macro else "FAIL: Missing Option Explicit.")
-    checks.append("PASS: Has error handler." if "On Error" in macro and "EH:" in macro else "FAIL: Missing error handler.")
-    checks.append("PASS: Checks active document." if "ActiveDoc" in macro and "Nothing" in macro else "FAIL: Active document validation not obvious.")
-    checks.append("PASS: Mentions backup/review safety." if "backup" in macro.lower() or "review" in macro.lower() else "WARN: Add backup warning.")
-    return checks
+def validate_macro_text(code: str) -> List[Dict[str, str]]:
+    checks = [
+        ("Option Explicit", "Option Explicit" in code),
+        ("Active document guard", "ActiveDoc" in code and "Is Nothing" in code),
+        ("Error handler", "On Error" in code and "EH:" in code),
+        ("Export path", "outFolder" in code or "SaveAs" in code),
+        ("Overwrite awareness", "backup" in code.lower() or "review paths" in code.lower()),
+    ]
+    return [{"Check": c, "Status": "Pass" if ok else "Review"} for c, ok in checks]
 
 
-def generate_apdl_plan(query: str) -> str:
-    return f"""! MechAI Pro ANSYS APDL starter skeleton
-! User request: {query}
-! Review geometry, material, loads, constraints, units and validation before use.
+def generate_apdl(project: str, load_hint: str = "") -> str:
+    return f'''! MechAI Pro ANSYS APDL starter
+! Project: {project}
 /PREP7
-! TODO: Define element type
-ET,1,SOLID186
 ! TODO: Define material properties
-MP,EX,1,210000
+MP,EX,1,2.1e11
 MP,PRXY,1,0.3
-! TODO: Import/build geometry and mesh
-! TODO: Apply boundary conditions and loads
+! TODO: Import/define geometry and mesh
+! TODO: Apply boundary conditions and loads: {load_hint}
 /SOLU
 ANTYPE,0
 SOLVE
 /POST1
-! TODO: Review displacement, stress, reactions, convergence, and validation checks
-"""
+! TODO: Review displacement, stress, reactions, convergence evidence
+FINISH
+'''
 
 
-def generate_fluent_journal(query: str) -> str:
-    return f"""; MechAI Pro Fluent journal starter
-; User request: {query}
-; Review mesh, units, boundary conditions, turbulence model, y+, convergence and validation.
-/file/read-case-data case.cas.h5
-/solve/initialize/hyb-initialization
-; TODO: set models, materials, boundary conditions
-; TODO: iterate and monitor residuals + mass/energy balances
-/solve/iterate 500
-/file/write-case-data result.cas.h5
-"""
-
-# -----------------------------------------------------------------------------
-# Project memory and references
-# -----------------------------------------------------------------------------
-
-def project_dir(project: str) -> Path:
-    d = PROJECT_MEMORY_DIR / slugify(project)
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "uploads").mkdir(exist_ok=True)
-    (d / "references_text").mkdir(exist_ok=True)
-    (d / "reports").mkdir(exist_ok=True)
-    (d / "artifacts").mkdir(exist_ok=True)
-    return d
+def generate_fluent_journal(project: str) -> str:
+    return f'''; MechAI Pro Fluent journal starter
+; Project: {project}
+; TODO: Read mesh
+; /file/read-mesh mesh.msh
+; TODO: Set models based on Reynolds number and physics
+; /define/models/viscous k-omega-sst yes
+; TODO: Set material, boundary conditions, initialization, convergence monitors
+; /solve/initialize/hyb-initialization
+; /solve/iterate 500
+; TODO: Check mass/energy balance and validation targets
+'''
 
 
-def memory_path(project: str) -> Path:
-    return project_dir(project) / "project_memory.json"
+def fea_setup_score(query: str, meta: Dict[str, Any]) -> Tuple[int, List[Dict[str, str]]]:
+    rows = risk_matrix("Simulation / FEA", query, meta)
+    score = score_from_risks(rows)
+    return score, rows
 
 
-def default_memory(project: str) -> Dict[str, Any]:
-    return {
-        "project": project,
-        "created_at": datetime.now().isoformat(timespec="seconds"),
-        "questions": [],
-        "decisions": [],
-        "assumptions": [],
-        "materials": [],
-        "calculations": [],
-        "uploaded_files": [],
-        "generated_reports": [],
-        "lessons_learned": [],
-        "risks": [],
-    }
-
-
-def load_memory(project: str) -> Dict[str, Any]:
-    path = memory_path(project)
-    if path.exists():
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            return default_memory(project)
-    return default_memory(project)
-
-
-def save_memory(project: str, memory: Dict[str, Any]) -> None:
-    memory["updated_at"] = datetime.now().isoformat(timespec="seconds")
-    memory_path(project).write_text(json.dumps(memory, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def append_memory(project: str, question: str, answer: str, frame: ProblemFrame, risks: List[RiskItem], calcs: List[CalculationResult], sources: List[SourceChunk]) -> None:
-    mem = load_memory(project)
-    mem["questions"].append({"time": datetime.now().isoformat(timespec="seconds"), "question": question, "workspace": frame.workspace})
-    mem["assumptions"].append({"time": datetime.now().isoformat(timespec="seconds"), "items": frame.missing_inputs[:6], "confidence": frame.confidence})
-    mem["risks"].append({"time": datetime.now().isoformat(timespec="seconds"), "workspace": frame.workspace, "risks": [asdict(r) for r in risks]})
-    if calcs:
-        mem["calculations"].append({"time": datetime.now().isoformat(timespec="seconds"), "items": [asdict(c) for c in calcs]})
-    mem["decisions"].append({
-        "time": datetime.now().isoformat(timespec="seconds"),
-        "summary": f"Applied {frame.workspace} reasoning; confidence {frame.confidence}; sources {len(sources)}.",
-        "sources": [s.source for s in sources[:5]],
-    })
-    save_memory(project, mem)
-
-
-def extract_uploaded_text(file) -> Tuple[str, str]:
-    name = file.name
-    suffix = Path(name).suffix.lower()
-    data = file.getvalue()
-    if suffix == ".pdf":
-        if PyPDF2 is None:
-            return "", "PyPDF2 is not installed; cannot extract PDF text."
-        try:
-            reader = PyPDF2.PdfReader(io.BytesIO(data))
-            text = []
-            for page in reader.pages[:80]:
-                text.append(page.extract_text() or "")
-            return "\n".join(text).strip(), "ok"
-        except Exception as e:
-            return "", f"PDF extraction failed: {e}"
-    if suffix in [".txt", ".md", ".csv"]:
-        try:
-            return data.decode("utf-8", errors="ignore"), "ok"
-        except Exception as e:
-            return "", f"Text extraction failed: {e}"
-    return "", "Unsupported file type for text ingestion."
-
-
-def ingest_reference(project: str, workspace_name: str, uploaded_file, source_type: str, legal_note: str) -> str:
-    pdir = project_dir(project)
-    safe_name = slugify(Path(uploaded_file.name).stem) + Path(uploaded_file.name).suffix.lower()
-    raw_path = pdir / "uploads" / safe_name
-    raw_path.write_bytes(uploaded_file.getvalue())
-    text, status = extract_uploaded_text(uploaded_file)
-    registry_path = pdir / "source_registry.json"
-    registry = []
-    if registry_path.exists():
-        try:
-            registry = json.loads(registry_path.read_text(encoding="utf-8"))
-        except Exception:
-            registry = []
-    entry = {
-        "id": str(uuid.uuid4())[:8],
-        "filename": uploaded_file.name,
-        "stored_as": str(raw_path.relative_to(ROOT)),
-        "workspace": workspace_name,
-        "source_type": source_type,
-        "legal_note": legal_note,
-        "ingested_at": datetime.now().isoformat(timespec="seconds"),
-        "status": status,
-        "text_chars": len(text),
-    }
-    registry.append(entry)
-    registry_path.write_text(json.dumps(registry, ensure_ascii=False, indent=2), encoding="utf-8")
-    mem = load_memory(project)
-    mem["uploaded_files"].append(entry)
-    save_memory(project, mem)
-    if text:
-        txt_name = safe_name + ".txt"
-        (pdir / "references_text" / txt_name).write_text(text, encoding="utf-8")
-    return status
+def cfd_setup_score(query: str, meta: Dict[str, Any]) -> Tuple[int, List[Dict[str, str]]]:
+    rows = risk_matrix("CFD / Thermal", query, meta)
+    score = score_from_risks(rows)
+    return score, rows
 
 # -----------------------------------------------------------------------------
-# Reports
+# Templates, reports, tests
 # -----------------------------------------------------------------------------
 
-def memory_to_markdown(project: str) -> str:
-    mem = load_memory(project)
-    lines = [f"# MechAI Pro Engineering Report — {project}", "", f"Generated: {datetime.now().isoformat(timespec='seconds')}", "", "## Project Memory Summary"]
-    for key in ["questions", "decisions", "assumptions", "materials", "calculations", "uploaded_files", "risks", "lessons_learned"]:
-        lines.append(f"\n### {key.replace('_', ' ').title()}")
-        items = mem.get(key, [])
+TEMPLATES = {
+    "DFM Review Template": "Create a DFM review for [part]. Process: [process]. Material: [material]. Annual volume: [volume]. Include score, risk matrix, missing inputs and verification plan.",
+    "FEA Setup Review Template": "Create an FEA setup review for [part]. Loads: [loads]. Constraints: [constraints]. Material: [material]. Include mesh, contacts, convergence and validation plan.",
+    "CFD Setup Review Template": "Create a CFD setup review for [flow domain]. Fluid: [fluid]. Velocity/flow rate: [value]. Include Reynolds number, turbulence model, mesh/y+, convergence and validation.",
+    "Material Selection Matrix": "Create a material selection matrix for [part/function]. Requirements: strength, stiffness, temperature, chemicals, process, cost, availability.",
+    "Design Review Checklist": "Create a design review checklist for [product]. Include requirements, loads, materials, manufacturing, tolerances, risks and verification.",
+    "FMEA Template": "Create an FMEA for [system/part]. Include function, failure modes, effects, causes, controls, severity, occurrence, detection and actions.",
+    "DVP&R Template": "Create a DVP&R plan for [product]. Include requirements, test method, acceptance criteria, sample size, owner and status.",
+    "Cost Reduction Template": "Create a cost reduction review for [part/process]. Include material, process, tooling, assembly, inspection, scrap, and ranked cost-down actions.",
+    "SolidWorks Macro Request Template": "Generate a SolidWorks VBA macro for [workflow]. Include validation, safety notes, .bas export and run instructions.",
+}
+
+
+def build_report_markdown(workspace_id: str, project_id: str, title: str = "Engineering Report") -> str:
+    meta, mem = load_project(workspace_id, project_id)
+    lines = [f"# {title}", "", f"Generated: {now_iso()}", f"App: {APP_TITLE} {APP_VERSION}", ""]
+    lines += ["## Project Profile"]
+    for k, v in meta.items():
+        if k not in ["project_id"] and v:
+            lines.append(f"- **{k.replace('_',' ').title()}**: {v}")
+    for sec in ["assumptions", "risks", "decisions", "materials", "calculations", "lessons_learned", "references"]:
+        lines.append(f"\n## {sec.replace('_',' ').title()}")
+        items = mem.get(sec, [])
         if not items:
-            lines.append("- No records yet.")
+            lines.append("- None recorded yet.")
         else:
-            for item in items[-10:]:
-                lines.append("- " + json.dumps(item, ensure_ascii=False)[:1000])
-    lines.append("\n## Engineering Use Note")
-    lines.append("This report is generated from internal MechAI project memory. Validate calculations, standards compliance, CAD/FEA/CFD assumptions, and test evidence before engineering release.")
+            for item in items[-20:]:
+                if isinstance(item, dict):
+                    lines.append("- " + "; ".join(f"{k}: {v}" for k, v in item.items() if k not in ["text"] and v))
+                else:
+                    lines.append(f"- {item}")
+    lines.append("\n## Conversation Excerpts")
+    for m in mem.get("chat_messages", [])[-10:]:
+        lines.append(f"### {m.get('role','message').title()} — {m.get('created_at','')}")
+        lines.append(str(m.get("content", ""))[:2000])
+        lines.append("")
     return "\n".join(lines)
 
 
-def make_docx_bytes(markdown_text: str) -> Optional[bytes]:
+def markdown_to_docx_bytes(md: str) -> Optional[bytes]:
     if Document is None:
         return None
     doc = Document()
-    for line in markdown_text.splitlines():
+    for line in md.splitlines():
         if line.startswith("# "):
             doc.add_heading(line[2:], level=1)
         elif line.startswith("## "):
@@ -1824,507 +1126,656 @@ def make_docx_bytes(markdown_text: str) -> Optional[bytes]:
         elif line.startswith("- "):
             doc.add_paragraph(line[2:], style="List Bullet")
         else:
-            doc.add_paragraph(line)
+            doc.add_paragraph(strip_md(line))
     bio = io.BytesIO()
     doc.save(bio)
     return bio.getvalue()
 
 
-def make_pdf_bytes(markdown_text: str) -> Optional[bytes]:
+def markdown_to_pdf_bytes(md: str) -> Optional[bytes]:
     if canvas is None or A4 is None:
         return None
     bio = io.BytesIO()
     c = canvas.Canvas(bio, pagesize=A4)
     width, height = A4
-    x, y = 42, height - 48
-    for raw in markdown_text.splitlines():
-        line = strip_markdown(raw)
-        if not line:
-            y -= 10
-            continue
-        for wrapped in textwrap.wrap(line, width=95):
-            c.drawString(x, y, wrapped[:120])
-            y -= 14
-            if y < 50:
-                c.showPage()
-                y = height - 48
-        if raw.startswith("#"):
-            y -= 8
+    y = height - 40
+    c.setFont("Helvetica", 9)
+    for raw in md.splitlines():
+        line = strip_md(raw)
+        for part in textwrap.wrap(line, width=95) or [""]:
+            if y < 40:
+                c.showPage(); c.setFont("Helvetica", 9); y = height - 40
+            c.drawString(40, y, part[:140])
+            y -= 13
     c.save()
     return bio.getvalue()
 
 
-def make_xlsx_bytes(project: str) -> Optional[bytes]:
+def memory_to_xlsx_bytes(workspace_id: str, project_id: str) -> Optional[bytes]:
     if Workbook is None:
         return None
-    mem = load_memory(project)
+    meta, mem = load_project(workspace_id, project_id)
     wb = Workbook()
     ws = wb.active
-    ws.title = "Summary"
-    ws.append(["Category", "Count"])
-    for key, val in mem.items():
-        if isinstance(val, list):
-            ws.append([key, len(val)])
-    for key in ["questions", "decisions", "risks", "calculations", "uploaded_files"]:
-        sheet = wb.create_sheet(key[:31])
-        sheet.append(["JSON record"])
-        for item in mem.get(key, [])[-100:]:
-            sheet.append([json.dumps(item, ensure_ascii=False)])
+    ws.title = "Project Profile"
+    ws.append(["Field", "Value"])
+    for k, v in meta.items():
+        ws.append([k, str(v)])
+    for sec in ["assumptions", "risks", "decisions", "materials", "calculations", "reports", "lessons_learned"]:
+        sheet = wb.create_sheet(sec[:31])
+        sheet.append(["Index", "Data"])
+        for i, item in enumerate(mem.get(sec, []), 1):
+            sheet.append([i, json.dumps(item, ensure_ascii=False) if isinstance(item, dict) else str(item)])
+    bio = io.BytesIO(); wb.save(bio); return bio.getvalue()
+
+
+def project_export_zip(workspace_id: str, project_id: str) -> bytes:
+    p = project_dir(workspace_id, project_id)
     bio = io.BytesIO()
-    wb.save(bio)
+    with zipfile.ZipFile(bio, "w", zipfile.ZIP_DEFLATED) as z:
+        for path in p.rglob("*"):
+            if path.is_file():
+                z.write(path, path.relative_to(p.parent))
+        md = build_report_markdown(workspace_id, project_id, "Project Export Summary")
+        z.writestr(f"{project_id}/project_summary.md", md)
     return bio.getvalue()
-
-# -----------------------------------------------------------------------------
-# Evaluation tests
-# -----------------------------------------------------------------------------
-
-EVAL_CASES = [
-    {"q": "Create a DFM review for an injection molded plastic cover.", "must": ["Manufacturing", "wall", "draft", "risk", "missing"]},
-    {"q": "Create an ANSYS static structural setup plan for a bracket loaded by 2 kN.", "must": ["FEA", "loads", "constraints", "mesh", "validation"]},
-    {"q": "Calculate Reynolds number for water in a 20 mm pipe at 1 m/s.", "must": ["Reynolds", "regime"]},
-    {"q": "Generate a SolidWorks macro skeleton to export STEP and DXF files.", "must": ["SolidWorks", "macro", "export", "validation"]},
-]
 
 
 def run_quality_tests() -> List[Dict[str, Any]]:
+    cases = [
+        {"name": "DFM injection molded cover", "query": "Create a DFM review for an injection molded plastic cover.", "must": ["Wall thickness", "Draft", "Ribs", "Tooling"]},
+        {"name": "FEA bracket", "query": "Create an ANSYS static structural setup plan for a bracket loaded by 2 kN.", "must": ["Loads", "Constraints", "Mesh", "Validation"]},
+        {"name": "CFD pipe", "query": "Calculate Reynolds number for water in a 20 mm pipe at 1 m/s.", "must": ["Reynolds", "Flow regime"]},
+        {"name": "SolidWorks macro", "query": "Generate a SolidWorks macro skeleton to export STEP and DXF files.", "must": ["Active document", "Export", "Error"]},
+    ]
     results = []
-    for case in EVAL_CASES:
-        frame = detect_problem_frame(case["q"], "General engineering")
-        sources = retrieve(case["q"], frame.workspace, "RD_Lab", 5)
-        risks = build_risk_matrix(frame, case["q"])
-        calcs = engineering_calculators(case["q"], frame)
-        answer = build_answer(case["q"], frame, sources, risks, calcs, project="RD_Lab", for_test=True)
-        text = answer.lower()
-        passed_terms = [term for term in case["must"] if term.lower() in text]
-        results.append({"question": case["q"], "workspace": frame.workspace, "passed": len(passed_terms), "required": len(case["must"]), "terms_found": passed_terms})
+    for c in cases:
+        ws = route_workspace(c["query"], "General engineering")
+        answer = build_engineering_answer(c["query"], ws, {}, "demo", None, for_test=True)
+        passed = sum(1 for m in c["must"] if m.lower() in answer.lower())
+        results.append({"Case": c["name"], "Workspace": ws, "Passed markers": f"{passed}/{len(c['must'])}", "Status": "Pass" if passed == len(c["must"]) else "Review"})
     return results
 
 # -----------------------------------------------------------------------------
 # Answer builder
 # -----------------------------------------------------------------------------
 
-def input_completeness(frame: ProblemFrame) -> Tuple[int, str]:
-    """Score how much release-critical information is present."""
-    total = max(1, len(frame.missing_inputs) + 5)
-    missing_penalty = min(85, len(frame.missing_inputs) * 8)
-    if frame.material == "not specified":
-        missing_penalty += 8
-    if frame.process == "not specified":
-        missing_penalty += 8
-    if not frame.quantities:
-        missing_penalty += 6
-    score = max(5, min(100, 100 - missing_penalty))
-    if score >= 80:
-        label = "Strong input definition"
-    elif score >= 60:
-        label = "Usable but incomplete"
-    elif score >= 40:
-        label = "Preliminary only"
+def format_source_list(results: List[Tuple[float, SourceChunk]]) -> str:
+    lines = []
+    for i, (score, s) in enumerate(results, 1):
+        lines.append(f"- [K{i}] {s.title} — `{s.path}` — source type: {s.source_type} — confidence weight: {s.quality:.2f}")
+    return "\n".join(lines) if lines else "- No internal source matched strongly. Use the global reasoning protocol and ask for more references."
+
+
+def verification_plan(workspace: str) -> List[str]:
+    if workspace == "Manufacturing / DFM":
+        return [
+            "Collect CAD/STEP or drawings with wall thickness, ribs, bosses, datum and CTQ dimensions.",
+            "Define material grade, shrinkage data, production volume, surface class and assembly method.",
+            "Run process-specific DFM review for tooling, sink/warpage, draft, parting line, ejection and tolerance capability.",
+            "Create first-article inspection plan and process capability targets for CTQ dimensions.",
+        ]
+    if workspace == "Simulation / FEA":
+        return [
+            "Freeze the simulation objective and pass/fail criterion before solving.",
+            "Confirm material properties, load cases, constraints, contacts and expected load path.",
+            "Run mesh convergence on quantity of interest and compare with a hand calculation.",
+            "Document limitations, singularities, reaction balance and validation evidence.",
+        ]
+    if workspace == "CFD / Thermal":
+        return [
+            "Define fluid, geometry domain, boundary conditions, flow rate/velocity and temperature assumptions.",
+            "Calculate Reynolds number and select turbulence/wall treatment strategy.",
+            "Set mesh quality, y+ target, convergence residuals, mass/energy balance checks.",
+            "Validate pressure drop/temperature/flow with analytical correlation or test data.",
+        ]
+    if workspace == "CAD / SolidWorks":
+        return [
+            "Define document types, naming convention, output folder and overwrite policy.",
+            "Validate macro against active document, error handling and save path safety.",
+            "Run on copied files first and log success/failure per document.",
+        ]
+    return [
+        "Define requirements, assumptions and pass/fail criteria.",
+        "Check internal sources and run relevant calculators.",
+        "Validate recommendation using hand calculation, prototype or test evidence.",
+    ]
+
+
+def build_engineering_answer(query: str, workspace: str, project_meta: Dict[str, Any], workspace_id: str, project_id: Optional[str], for_test: bool = False) -> str:
+    routed = route_workspace(query, workspace)
+    sources = retrieve_sources(query, routed, project_meta, workspace_id, project_id, k=6)
+    calcs = parse_basic_numbers_for_calcs(query)
+    missing = detect_missing_inputs(routed, query, project_meta)
+    maturity, maturity_label = input_maturity(routed, query, project_meta)
+    risks = risk_matrix(routed, query, project_meta)
+    score = score_from_risks(risks)
+    high_risks = sum(1 for r in risks if r["Risk"] == "High")
+    unknowns = sum(1 for r in risks if r["Risk"] == "Unknown")
+    conf = confidence_level(maturity, len(sources), len(calcs))
+    gate = release_gate(maturity, high_risks, unknowns)
+    agent = WORKSPACES.get(routed, WORKSPACES["General engineering"])["agent"]
+    project_frame = []
+    for key in ["project_name", "project_type", "part_type", "material", "process", "manufacturing_method", "annual_volume", "target_use"]:
+        if project_meta.get(key):
+            project_frame.append(f"- {key.replace('_',' ').title()}: {project_meta.get(key)}")
+    if not project_frame:
+        project_frame = ["- No active project metadata. Create a project to improve context and confidence."]
+
+    lines = []
+    lines.append(f"## Mechanical Engineering OS Review — {routed}")
+    lines.append("")
+    lines.append(f"**Agent:** {agent}")
+    lines.append("**Mode:** Internal Knowledge Only")
+    lines.append(f"**Build:** {APP_VERSION}")
+    lines.append(f"**Release gate:** {gate}")
+    lines.append(f"**Input maturity:** {maturity}/100 — {maturity_label}")
+    lines.append(f"**Engineering confidence:** {conf}")
+    lines.append(f"**Primary score:** {score}/100")
+    lines.append("")
+    lines.append("### Project frame")
+    lines.extend(project_frame)
+    lines.append("")
+    lines.append("### Engineering interpretation")
+    if routed == "Manufacturing / DFM":
+        lines.append("The request is treated as a manufacturing feasibility and DFM/DFA review. The current conclusion is preliminary until material, geometry, wall thickness and production volume are defined. For an injection-molded cover, the dominant risks are wall uniformity, draft/ejection, ribs/bosses, sink/warpage, tooling strategy and tolerance capability.")
+    elif routed == "Simulation / FEA":
+        lines.append("The request is treated as an FEA setup review. The result quality depends mainly on objective definition, loads, constraints, contacts, mesh convergence and validation evidence. The review should not be released from stress plots alone.")
+    elif routed == "CFD / Thermal":
+        lines.append("The request is treated as a CFD/thermal setup review. Flow regime, boundary conditions, mesh/y+, convergence and mass/energy balance determine result credibility.")
+    elif routed == "CAD / SolidWorks":
+        lines.append("The request is treated as a CAD automation workflow. Safety, path validation, document-type checking, error handling and non-destructive testing are mandatory before running macros on production files.")
+    elif routed == "Materials Selection":
+        lines.append("The request is treated as material screening. Material choice must start from function and constraints, not from a preferred material name. Manufacturing compatibility and environment must be checked before recommendation.")
     else:
-        label = "Low input maturity"
-    return score, label
-
-
-def evidence_level(sources: List[SourceChunk], calcs: List[CalculationResult], frame: ProblemFrame) -> str:
-    """Simple evidence ladder for engineering governance."""
-    if calcs and len(sources) >= 4 and not frame.missing_inputs:
-        return "Level 4 — internally sourced + calculated + input-complete; still needs test/standard release evidence."
-    if calcs and len(sources) >= 3:
-        return "Level 3 — internally sourced with deterministic checks; missing data still limits release confidence."
-    if len(sources) >= 3:
-        return "Level 2 — internally sourced qualitative assessment; add numbers/calculations for engineering decision."
-    if sources:
-        return "Level 1 — weak internal evidence; expand the relevant knowledge pack or upload legal references."
-    return "Level 0 — no internal evidence retrieved; do not use for engineering decisions."
-
-
-def release_gate(score: int, input_score: int, risks: List[RiskItem]) -> Tuple[str, str]:
-    high_count = sum(1 for r in risks if r.risk == "High")
-    unknown_count = sum(1 for r in risks if r.risk == "Unknown")
-    if score >= 75 and input_score >= 70 and high_count == 0:
-        return "Conditional pass", "Proceed to detailed validation if calculations, standards, CAD and test evidence are completed."
-    if score >= 55 and high_count <= 2:
-        return "Engineering hold", "Do not release yet. Resolve high-risk items and missing release-critical data first."
-    return "Stop / preliminary only", "Treat this as concept-stage guidance only. Release decision is blocked until inputs and validation evidence improve."
-
-
-def engineering_review_board(frame: ProblemFrame, risks: List[RiskItem], calcs: List[CalculationResult]) -> List[Tuple[str, str]]:
-    """Multi-perspective internal review board. It is deterministic, not external AI."""
-    top_high = [r.area for r in risks if r.risk == "High"][:3]
-    unknowns = [r.area for r in risks if r.risk == "Unknown"][:3]
-    reviews: List[Tuple[str, str]] = []
-    if frame.workspace == "Manufacturing / DFM":
-        reviews = [
-            ("Manufacturing reviewer", "Primary release blockers are process capability, tooling strategy, tolerance feasibility and repeatable production stability."),
-            ("Design reviewer", "Geometry must be reviewed for uniform walls, functional ribs/bosses, draft, assembly access and critical-to-quality dimensions."),
-            ("Materials reviewer", "Material family and grade are not optional; shrinkage, stiffness, heat resistance and impact behavior depend on it."),
-            ("Quality reviewer", "Define CTQs, inspection method, first-article checks, defect criteria, and process capability targets before production release."),
-        ]
-    elif frame.workspace == "Simulation / FEA":
-        reviews = [
-            ("FEA reviewer", "Boundary conditions, contacts and mesh convergence are more important than the visual stress plot."),
-            ("Design reviewer", "Confirm load path and acceptance criterion before simulation is used to make a design decision."),
-            ("Validation reviewer", "Hand calculation, benchmark or physical test correlation is required before release."),
-        ]
-    elif frame.workspace == "CFD / Thermal":
-        reviews = [
-            ("CFD reviewer", "Flow regime, boundary conditions, mesh/y+, conservation balance and convergence must be proven."),
-            ("Thermal reviewer", "Heat sources, material conductivity, contact resistances and environmental assumptions must be explicit."),
-            ("Validation reviewer", "Use pressure-drop/heat-transfer correlations or test data as sanity checks."),
-        ]
-    elif frame.workspace == "CAD / SolidWorks":
-        reviews = [
-            ("CAD automation reviewer", "Macro must validate active document type, units, output paths and overwrite policy before execution."),
-            ("Data safety reviewer", "Never run destructive batch automation without backups, logs and a dry-run mode."),
-            ("Manufacturing reviewer", "CAD outputs must support downstream DXF/STEP/drawing/BOM workflows reliably."),
-        ]
-    elif frame.workspace == "Materials Selection":
-        reviews = [
-            ("Materials reviewer", "Screen candidates by functional constraints first, not by habit or availability."),
-            ("Manufacturing reviewer", "Material must be compatible with process window, tooling, supplier availability and cost."),
-            ("Validation reviewer", "Datasheet values need test confirmation for real geometry, environment and aging conditions."),
-        ]
-    else:
-        reviews = [
-            ("Chief mechanical reviewer", "Clarify objective, loads, material, process, constraints, validation method and decision required."),
-            ("Risk reviewer", "Unspecified inputs must be treated as risk, not as assumptions hidden in the answer."),
-        ]
-    if top_high:
-        reviews.append(("Risk escalation", f"Highest-risk areas detected: {', '.join(top_high)}."))
-    if unknowns:
-        reviews.append(("Unknowns escalation", f"Unknown risk areas needing data: {', '.join(unknowns)}."))
-    return reviews
-
-
-def verification_plan(frame: ProblemFrame, risks: List[RiskItem], calcs: List[CalculationResult]) -> List[str]:
-    plan = []
-    if frame.workspace == "Manufacturing / DFM":
-        plan = [
-            "Collect CAD/STEP or drawings with nominal wall thickness, ribs, bosses, gates/ejector constraints and mating parts.",
-            "Define material grade, shrinkage data, target production volume, surface class and CTQ dimensions.",
-            "Run DFM review for sink/warpage, draft, parting line, tooling actions, tolerance capability and assembly method.",
-            "Create first-article inspection checklist and process capability targets for critical dimensions.",
-        ]
-    elif frame.workspace == "Simulation / FEA":
-        plan = [
-            "Freeze simulation objective and pass/fail criterion before meshing.",
-            "Create hand calculation for the dominant load path as a lower-bound sanity check.",
-            "Run mesh convergence on the decision quantity, not just maximum singular stress.",
-            "Document boundary condition sensitivity and validation evidence.",
-        ]
-    elif frame.workspace == "CFD / Thermal":
-        plan = [
-            "Calculate Reynolds number and expected pressure/heat-transfer range before CFD setup.",
-            "Define physical boundary conditions and conservation checks.",
-            "Set mesh/y+ strategy consistent with wall treatment and turbulence model.",
-            "Validate with correlation, test data, or benchmark case.",
-        ]
-    elif frame.workspace == "CAD / SolidWorks":
-        plan = [
-            "Confirm document type, units, naming convention, output folder and overwrite policy.",
-            "Generate macro with validation guards, error handling, logging and non-destructive defaults.",
-            "Test on copied files before production folder execution.",
-            "Record macro version and run instructions in project memory.",
-        ]
-    else:
-        plan = [
-            "Define objective and required engineering decision.",
-            "Collect missing inputs listed below.",
-            "Run deterministic checks when numeric inputs are available.",
-            "Create validation evidence before release.",
-        ]
-    return plan
-
-
-def build_answer(query: str, frame: ProblemFrame, sources: List[SourceChunk], risks: List[RiskItem], calcs: List[CalculationResult], project: str, for_test: bool = False) -> str:
-    score, level = risk_score(risks, frame)
-    input_score, input_label = input_completeness(frame)
-    score_name = workspace_score_name(frame.workspace)
-    gate, gate_reason = release_gate(score, input_score, risks)
-    protocol = REASONING_PROTOCOLS.get(frame.workspace, REASONING_PROTOCOLS["General engineering"])
-    board = engineering_review_board(frame, risks, calcs)
-    verification = verification_plan(frame, risks, calcs)
-    evidence = evidence_level(sources, calcs, frame)
-    lines: List[str] = []
-    lines.append(f"### Mechanical Engineering Review Board v26 — {frame.workspace}")
+        lines.append("The request is treated through the global mechanical engineering protocol: define function, loads, constraints, material/process, failure modes, validation method and release gate.")
     lines.append("")
-    lines.append("#### Executive engineering judgment")
-    lines.append(f"- **Release gate:** {gate}")
-    lines.append(f"- **Reason:** {gate_reason}")
-    lines.append(f"- **{score_name}:** {score}/100 — {level}")
-    lines.append(f"- **Input maturity:** {input_score}/100 — {input_label}")
-    lines.append(f"- **Evidence level:** {evidence}")
-    lines.append("")
-    lines.append("#### Problem frame")
-    lines.append(f"- Part/component: **{frame.part}**.")
-    lines.append(f"- Process/physics: **{frame.process}**.")
-    lines.append(f"- Material: **{frame.material}**.")
-    lines.append(f"- Quantities detected: **{', '.join(frame.quantities) if frame.quantities else 'not specified'}**.")
-    lines.append(f"- Confidence: **{frame.confidence}**.")
-    if frame.concepts:
-        lines.append(f"- Key concepts considered: {', '.join(frame.concepts)}.")
-    lines.append("")
-    lines.append("#### Engineering review board")
-    for role, note in board:
-        lines.append(f"- **{role}:** {note}")
-    lines.append("")
-    lines.append("#### Reasoning protocol applied")
-    for i, item in enumerate(protocol, 1):
-        lines.append(f"{i}. {item}")
-    lines.append("")
-    lines.append("#### Risk matrix")
-    lines.append("| Area | Risk | Reason | Required data | Recommended action |")
-    lines.append("|---|---:|---|---|---|")
+    lines.append("### Risk matrix")
+    lines.append("| Area | Risk | Reason |")
+    lines.append("|---|---:|---|")
     for r in risks:
-        lines.append(f"| {r.area} | {r.risk} | {r.reason} | {r.required_data} | {r.recommended_action} |")
+        lines.append(f"| {r['Area']} | {r['Risk']} | {r['Reason']} |")
     lines.append("")
-    lines.append("#### Deterministic calculators / validators")
+    lines.append("### Missing data required before confident release")
+    if missing:
+        for m in missing:
+            lines.append(f"- {m}")
+    else:
+        lines.append("- No major missing inputs detected from the current prompt, but verify all project requirements.")
+    lines.append("")
     if calcs:
+        lines.append("### Deterministic calculator results")
         for c in calcs:
-            lines.append(f"- **{c.name}** — {c.status}: {c.details}")
-    else:
-        lines.append("- No deterministic calculation was possible from the current text. Provide numeric inputs to run calculators and validators.")
+            lines.append(f"**{c['name']}**")
+            for k, v in c["result"].items():
+                if isinstance(v, float):
+                    lines.append(f"- {k}: {v:.5g}")
+                else:
+                    lines.append(f"- {k}: {v}")
+        lines.append("")
+    lines.append("### Ranked engineering actions")
+    actions = []
+    for r in risks:
+        if r["Risk"] in ["High", "Unknown"]:
+            actions.append(f"Resolve **{r['Area']}**: {r['Reason']}")
+    actions += verification_plan(routed)[:3]
+    for i, a in enumerate(actions[:8], 1):
+        lines.append(f"{i}. {a}")
     lines.append("")
-    lines.append("#### Missing inputs before engineering release")
-    if frame.missing_inputs:
-        for item in frame.missing_inputs:
-            lines.append(f"- {item}")
-    else:
-        lines.append("- No obvious critical missing inputs detected from this short prompt, but release validation is still required.")
-    lines.append("")
-    lines.append("#### Verification plan")
-    for i, step in enumerate(verification, 1):
+    lines.append("### Verification plan")
+    for i, step in enumerate(verification_plan(routed), 1):
         lines.append(f"{i}. {step}")
     lines.append("")
-    lines.append("#### Ranked recommendations")
-    recs = ranked_recommendations(frame, risks)
-    for i, rec in enumerate(recs, 1):
-        lines.append(f"{i}. {rec}")
+    lines.append("### Internal retrieval evidence")
+    lines.append(format_source_list(sources))
     lines.append("")
-    lines.append("#### Internal retrieval and citations")
-    if sources:
-        for i, src in enumerate(sources[:7], 1):
-            conf = "high" if src.score >= 12 else "medium" if src.score >= 6 else "low"
-            lines.append(f"- [K{i}] **{src.workspace.replace('_', ' ').title()}** — `{src.source}` — relevance {src.score}, source confidence {conf}.")
-    else:
-        lines.append("- No matching internal source found. Add legal references or expand the relevant Knowledge Pack.")
-    lines.append("")
-    lines.append("#### Engineering governance note")
-    lines.append("This answer is an internal engineering review aid, not a certified calculation, legal standards release, CAD validation, FEA/CFD validation, or test approval. Engineering release still requires checked calculations, source data, standard compliance, CAD/inspection evidence, and physical or benchmark validation where applicable.")
-    return "\n".join(lines)
-
-
-def ranked_recommendations(frame: ProblemFrame, risks: List[RiskItem]) -> List[str]:
-    high = [r for r in risks if r.risk == "High"]
-    medium = [r for r in risks if r.risk in ["Medium", "Unknown"]]
-    recs = []
-    for r in high[:3]:
-        recs.append(f"Resolve **{r.area}** first: {r.recommended_action}")
-    for r in medium[:3]:
-        recs.append(f"Reduce **{r.area}** uncertainty: collect {r.required_data}.")
-    if frame.workspace == "Manufacturing / DFM":
-        recs.append("Upload CAD/STEP or provide wall thickness/material/volume to convert this from preliminary review to actionable DFM release review.")
-    elif frame.workspace == "Simulation / FEA":
-        recs.append("Define loads, constraints, material and validation target before treating simulation output as evidence.")
-    elif frame.workspace == "CAD / SolidWorks":
-        recs.append("Confirm document type, output folder and overwrite policy before running any macro.")
-    return recs[:6]
+    lines.append("### Engineering warning")
+    lines.append("This is an engineering decision-support review. Final design release still requires responsible engineer approval, correct inputs, validated calculations, and applicable standards/compliance checks.")
+    answer = "\n".join(lines)
+    if not for_test and project_id:
+        add_memory_item(workspace_id, project_id, "questions", {"question": query, "workspace": routed, "created_at": now_iso()})
+        add_memory_item(workspace_id, project_id, "risks", {"workspace": routed, "score": score, "release_gate": gate, "risk_matrix": risks, "created_at": now_iso()})
+        for c in calcs:
+            add_memory_item(workspace_id, project_id, "calculations", {"name": c["name"], "result": c["result"], "created_at": now_iso()})
+        add_memory_item(workspace_id, project_id, "chat_messages", {"role": "user", "content": query, "created_at": now_iso()})
+        add_memory_item(workspace_id, project_id, "chat_messages", {"role": "assistant", "content": answer, "created_at": now_iso()})
+    return answer
 
 # -----------------------------------------------------------------------------
-# UI styling
+# UI
 # -----------------------------------------------------------------------------
 
-st.set_page_config(page_title=APP_TITLE, page_icon="⚙️", layout="wide", initial_sidebar_state="expanded")
-
-st.markdown(
-    """
+def inject_css() -> None:
+    st.markdown("""
 <style>
-:root { --bg:#000; --panel:#0f0f10; --panel2:#17181d; --text:#f4f4f5; --muted:#a1a1aa; --line:#2b2b2f; --accent:#ff4b4b; }
-html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] { background:#000 !important; color:var(--text) !important; }
-[data-testid="stHeader"] { background:transparent !important; }
-[data-testid="stToolbar"], #MainMenu, footer { visibility:hidden !important; display:none !important; }
-section[data-testid="stSidebar"] { background:#050505 !important; border-right:1px solid #222 !important; min-width:292px !important; max-width:292px !important; width:292px !important; }
-section[data-testid="stSidebar"] * { color:#f6f6f6 !important; }
-.block-container { max-width:1060px !important; padding-top:3.0rem !important; padding-bottom:8rem !important; }
-.stButton>button { background:#2d2d2d !important; border:0 !important; border-radius:12px !important; color:#fff !important; min-height:44px; }
-.stDownloadButton>button { background:#242428 !important; border:1px solid #444 !important; border-radius:12px !important; color:#fff !important; }
-[data-testid="stChatMessage"] { background:transparent !important; border:0 !important; }
-[data-testid="stChatInput"] { background:#101114 !important; border-top:1px solid #222 !important; padding-left:31%; padding-right:4%; }
-[data-testid="stChatInput"] textarea { background:#202020 !important; border:1px solid #3a3a3a !important; color:#fff !important; border-radius:28px !important; min-height:58px !important; }
-.small-muted { color:#9ca3af; font-size:0.88rem; line-height:1.55; }
-.sidebar-title { font-size:1.45rem; font-weight:800; margin: 1.2rem 0 1.4rem 0; }
-.report-card { border:1px solid #242424; border-radius:14px; padding:1rem; background:#090909; }
-code { color:#7ee787 !important; background:#111 !important; }
-table { font-size:0.92rem; }
-th, td { border-color:#333 !important; }
-@media (max-width: 900px) {
-    section[data-testid="stSidebar"] { min-width:260px !important; max-width:260px !important; width:260px !important; }
-    [data-testid="stChatInput"] { padding-left:270px; padding-right:0.8rem; }
-    .block-container { padding-left:1rem !important; padding-right:1rem !important; }
-}
+:root { --bg:#0f0f10; --panel:#171719; --muted:#9ca3af; --line:#2a2a2d; --text:#f4f4f5; }
+html, body, [data-testid="stAppViewContainer"] { background:#0f0f10 !important; color:#f4f4f5; }
+[data-testid="stSidebar"] { background:#171719 !important; min-width:290px !important; width:290px !important; }
+[data-testid="stSidebar"] * { color:#f4f4f5; }
+[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"] { display:none !important; }
+.block-container { max-width:980px; padding-top:1.2rem; padding-bottom:8rem; }
+.stChatMessage { background:transparent !important; }
+[data-testid="stChatInput"] { background:#0f0f10 !important; }
+textarea, input, select { background:#1f1f22 !important; color:#f4f4f5 !important; border-color:#333 !important; }
+button { border-radius:10px !important; }
+.mechai-badge { display:inline-block; padding:5px 10px; border:1px solid #2f2f33; border-radius:999px; color:#cbd5e1; background:#161619; font-size:12px; margin-right:6px; margin-bottom:6px; }
+.mechai-card { border:1px solid #2a2a2d; background:#151517; border-radius:16px; padding:16px; margin:10px 0; }
+.small-muted { color:#9ca3af; font-size:12px; }
+hr { border-color:#2a2a2d !important; }
 </style>
-""",
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
 
-# Ensure deep packs exist at runtime.
-seed_deep_knowledge(force=False)
 
-# -----------------------------------------------------------------------------
-# Session state
-# -----------------------------------------------------------------------------
+def sidebar_identity() -> Tuple[str, str, str]:
+    st.sidebar.markdown("## MechAI Pro")
+    st.sidebar.caption("Universal Mechanical Engineering OS")
+    workspace_id = st.sidebar.text_input("Workspace", value=st.session_state.get("workspace_id", "personal_workspace"), help="Personal, team, or company workspace ID.")
+    user_name = st.sidebar.text_input("User", value=st.session_state.get("user_name", "Engineer"))
+    role = st.sidebar.selectbox("Role", ROLES, index=ROLES.index(st.session_state.get("role", "Owner")) if st.session_state.get("role", "Owner") in ROLES else 0)
+    st.session_state["workspace_id"] = workspace_id
+    st.session_state["user_name"] = user_name
+    st.session_state["role"] = role
+    # Local account foundation record
+    uf = users_file(workspace_id)
+    users = safe_read_json(uf, {})
+    uid = slugify(user_name, "engineer")
+    users[uid] = {"name": user_name, "role": role, "last_seen": now_iso()}
+    safe_write_json(uf, users)
+    return workspace_id, user_name, role
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "project" not in st.session_state:
-    st.session_state.project = "RD_Lab"
-if "workspace" not in st.session_state:
-    st.session_state.workspace = "General engineering"
 
-# -----------------------------------------------------------------------------
-# Sidebar
-# -----------------------------------------------------------------------------
+def sidebar_project_system(workspace_id: str, role: str) -> Optional[str]:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### Projects")
+    if st.sidebar.button("+ New engineering project", use_container_width=True):
+        st.session_state.show_new_project = True
+    projects = list_projects(workspace_id)
+    labels = [f"{p.get('project_name','Project')} · {p.get('project_type','')[:18]}" for p in projects]
+    if projects:
+        current_id = st.session_state.get("active_project_id")
+        idx = next((i for i, p in enumerate(projects) if p.get("project_id") == current_id), 0)
+        chosen = st.sidebar.selectbox("Active project", labels, index=idx, label_visibility="collapsed")
+        st.session_state.active_project_id = projects[labels.index(chosen)]["project_id"]
+    else:
+        st.sidebar.info("No projects yet. Create one to unlock project memory.")
+    return st.session_state.get("active_project_id")
 
-with st.sidebar:
-    st.markdown('<div class="sidebar-title">MechAI Pro</div>', unsafe_allow_html=True)
-    if st.button("✎ New chat", use_container_width=True):
-        st.session_state.messages = []
-        st.rerun()
-    st.markdown("⌕ Search chats")
-    st.markdown("Ⅲ Library")
-    st.markdown("### Workspace")
-    ws_names = list(WORKSPACES.keys())
-    st.session_state.workspace = st.selectbox(
-        "Workspace", ws_names,
-        index=ws_names.index(st.session_state.workspace) if st.session_state.workspace in ws_names else 0,
-        label_visibility="collapsed",
-        format_func=lambda x: f"{WORKSPACES[x]['icon']} {x}",
-    )
-    st.markdown('<div class="small-muted">Workspace biases the internal mechanical brain. Auto-routing still reads the question.</div>', unsafe_allow_html=True)
-    st.markdown("### View")
-    view = st.radio("View", ["Chat", "About"], horizontal=True, label_visibility="collapsed")
-    st.markdown("### Projects")
-    existing_projects = sorted([p.name for p in PROJECT_MEMORY_DIR.iterdir() if p.is_dir()]) or ["RD_Lab"]
-    if "RD_Lab" not in existing_projects:
-        existing_projects.insert(0, "RD_Lab")
-    st.session_state.project = st.selectbox("Project", existing_projects, index=existing_projects.index(st.session_state.project) if st.session_state.project in existing_projects else 0, label_visibility="collapsed")
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("+ Project", use_container_width=True):
-            new_name = f"Project_{datetime.now().strftime('%H%M%S')}"
-            project_dir(new_name)
-            st.session_state.project = new_name
-            st.rerun()
-    with c2:
-        if st.button("Clear", use_container_width=True):
-            st.session_state.messages = []
-            st.rerun()
 
-    with st.expander("Reference Library / المراجع", expanded=False):
-        st.markdown("Upload only legal/public/owned references. Avoid confidential files on public deployment.")
-        source_type = st.selectbox("Source type", ["Open reference", "Company document", "Datasheet", "Catalog", "Design guide", "Standards summary", "Own engineering note"])
-        legal_note = st.text_input("Legal/source note", value="User confirms rights to use this file for internal reference.")
-        uploads = st.file_uploader("Upload references", type=["pdf", "txt", "md", "csv"], accept_multiple_files=True)
-        if uploads and st.button("Ingest references", use_container_width=True):
-            statuses = []
-            for f in uploads:
-                statuses.append(f"{f.name}: {ingest_reference(st.session_state.project, st.session_state.workspace, f, source_type, legal_note)}")
-            st.success("References processed.")
-            st.write(statuses)
+def new_project_form(workspace_id: str) -> None:
+    if not st.session_state.get("show_new_project"):
+        return
+    with st.expander("Create Universal Engineering Project", expanded=True):
+        with st.form("new_project_form"):
+            c1, c2 = st.columns(2)
+            with c1:
+                project_name = st.text_input("Project name", value="Injection Molded Cover")
+                project_type = st.selectbox("Project type", PROJECT_TYPES)
+                part_type = st.text_input("Part type", value="Enclosure")
+                material = st.text_input("Material", value="ABS")
+            with c2:
+                process = st.text_input("Process", value="Injection molding")
+                manufacturing_method = st.text_input("Manufacturing method", value="Injection molding")
+                annual_volume = st.text_input("Annual volume", value="50,000")
+                target_use = st.text_input("Target use", value="Consumer product")
+            notes = st.text_area("Initial context / requirements", value="Preliminary R&D/DFM project.")
+            if st.form_submit_button("Create project", use_container_width=True):
+                pid = create_project(workspace_id, {
+                    "project_name": project_name, "project_type": project_type, "part_type": part_type,
+                    "material": material, "process": process, "manufacturing_method": manufacturing_method,
+                    "annual_volume": annual_volume, "target_use": target_use, "initial_notes": notes,
+                })
+                st.session_state.active_project_id = pid
+                st.session_state.show_new_project = False
+                st.rerun()
 
-    with st.expander("Engineering Tools", expanded=False):
-        st.markdown("- Beam / Shaft / Bearing checks\n- Reynolds / pressure drop logic\n- Sheet metal bend allowance\n- Injection molding wall/rib checks")
-        st.caption("Calculators auto-run when numeric inputs are detected in the chat.")
 
-    with st.expander("Reports", expanded=False):
-        md = memory_to_markdown(st.session_state.project)
-        st.download_button("Download Markdown", data=md.encode("utf-8"), file_name=f"{slugify(st.session_state.project)}_report.md", mime="text/markdown", use_container_width=True)
-        docx = make_docx_bytes(md)
-        if docx:
-            st.download_button("Download Word DOCX", data=docx, file_name=f"{slugify(st.session_state.project)}_report.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
-        pdf = make_pdf_bytes(md)
-        if pdf:
-            st.download_button("Download PDF", data=pdf, file_name=f"{slugify(st.session_state.project)}_report.pdf", mime="application/pdf", use_container_width=True)
-        xlsx = make_xlsx_bytes(st.session_state.project)
-        if xlsx:
-            st.download_button("Download Excel XLSX", data=xlsx, file_name=f"{slugify(st.session_state.project)}_memory.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+def project_dashboard(workspace_id: str, project_id: Optional[str]) -> None:
+    meta, mem = load_project(workspace_id, project_id)
+    if not project_id or not meta:
+        st.markdown("### Good to see you.")
+        st.caption("Create a project to activate project memory, reference vault, reports, CAD/simulation artifacts, and engineering history.")
+        return
+    st.markdown(f"### {html.escape(meta.get('project_name','Project'))}")
+    badges = [
+        f"Type: {meta.get('project_type','-')}", f"Part: {meta.get('part_type','-')}", f"Material: {meta.get('material','-')}",
+        f"Process: {meta.get('process','-')}", f"Volume: {meta.get('annual_volume','-')}", f"Use: {meta.get('target_use','-')}",
+    ]
+    st.markdown("".join(f"<span class='mechai-badge'>{html.escape(b)}</span>" for b in badges), unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Questions", len(mem.get("questions", [])))
+    c2.metric("Risks", len(mem.get("risks", [])))
+    c3.metric("References", len(mem.get("references", [])))
+    c4.metric("Reports", len(mem.get("reports", [])))
+    with st.expander("Project memory snapshot", expanded=False):
+        st.json({k: mem.get(k, [])[-3:] for k in ["assumptions", "risks", "decisions", "materials", "calculations", "lessons_learned"]})
 
-    with st.expander("Quality Tests", expanded=False):
-        if st.button("Run internal evaluation", use_container_width=True):
-            st.session_state.eval_results = run_quality_tests()
-        if "eval_results" in st.session_state:
-            st.write(st.session_state.eval_results)
 
-    with st.expander("Settings", expanded=False):
-        st.markdown(f"Mode: **Internal Knowledge Only**")
-        st.markdown(f"Brain: **Mechanical Decision Engine v26**")
-        st.markdown(f"Internal knowledge docs: **{len(list(KNOWLEDGE_DIR.glob('*/*.md')))}**")
-        st.markdown(f"Project memory: `{project_dir(st.session_state.project).relative_to(ROOT)}`")
-        st.markdown("External AI providers are not part of this build.")
-        st.markdown(f"Build: `{APP_VERSION}`")
-    st.markdown("---")
-    st.caption("Wafeeq · MechAI Pro")
+def reference_vault_ui(workspace_id: str, project_id: Optional[str], role: str) -> None:
+    st.subheader("Reference Vault")
+    if not project_id:
+        st.info("Create/select a project first.")
+        return
+    meta, mem = load_project(workspace_id, project_id)
+    st.caption("Upload only files you have the right to use. Do not upload confidential data to a public deployment.")
+    can_edit = role in ["Owner", "Admin", "Engineer"]
+    if can_edit:
+        with st.form("reference_upload_form"):
+            uploaded = st.file_uploader("Upload reference", type=["pdf", "txt", "md", "csv"])
+            c1, c2 = st.columns(2)
+            with c1:
+                title = st.text_input("Title")
+                ws = st.selectbox("Workspace", list(WORKSPACES.keys()), index=list(WORKSPACES.keys()).index(meta.get("workspace", "General engineering")) if meta.get("workspace") in WORKSPACES else 0)
+                source_type = st.selectbox("Source type", SOURCE_TYPES)
+            with c2:
+                confidentiality = st.selectbox("Confidentiality", CONFIDENTIALITY, index=2)
+                revision = st.text_input("Revision", value="Rev A")
+                tags = st.text_input("Tags", value="")
+            legal = st.text_area("Legal / usage note", value="I have the right to use this file for this project.")
+            if st.form_submit_button("Add to Reference Vault", use_container_width=True) and uploaded:
+                rec = register_reference(workspace_id, project_id, uploaded, {
+                    "title": title or uploaded.name, "workspace": ws, "source_type": source_type,
+                    "confidentiality": confidentiality, "revision": revision, "tags": tags, "legal_note": legal,
+                })
+                st.success(f"Reference added: {rec['title']}")
+                st.rerun()
+    else:
+        st.warning("Viewer role cannot upload references.")
+    refs = mem.get("references", [])
+    if refs:
+        st.markdown("#### Project references")
+        rows = [{"Title": r.get("title"), "Workspace": r.get("workspace"), "Type": r.get("source_type"), "Confidentiality": r.get("confidentiality"), "Revision": r.get("revision"), "Tags": ", ".join(r.get("tags", []))} for r in refs]
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+    else:
+        st.info("No references uploaded yet.")
 
-# -----------------------------------------------------------------------------
-# Main view
-# -----------------------------------------------------------------------------
 
-if view == "About":
-    st.title("MechAI Pro")
-    st.markdown(
-        """
-### Mechanical Engineering Operating System — Knowledge-First Build
+def templates_ui() -> None:
+    st.subheader("Engineering Templates Library")
+    st.caption("Use these templates to avoid starting from a blank prompt.")
+    cols = st.columns(2)
+    for i, (name, text) in enumerate(TEMPLATES.items()):
+        with cols[i % 2]:
+            with st.expander(name):
+                st.code(text, language="text")
+                if st.button(f"Use: {name}", key=f"tpl_{name}"):
+                    st.session_state.template_to_use = text
+                    st.success("Template copied into the prompt helper below.")
+    if st.session_state.get("template_to_use"):
+        st.text_area("Selected template", value=st.session_state.template_to_use, height=110)
 
-This build is not a wrapper around OpenAI or Gemini. Its visible reasoning path is:
 
-`Knowledge Packs → Retrieval → Mechanical Reasoning → Risk/Scoring → Calculators → Project Memory → Reports`
+def report_studio_ui(workspace_id: str, project_id: Optional[str]) -> None:
+    st.subheader("Engineering Report Studio")
+    if not project_id:
+        st.info("Create/select a project first.")
+        return
+    report_type = st.selectbox("Report type", ["DFM Report", "FEA Setup Review", "CFD Setup Review", "Material Selection Report", "Design Review Report", "FMEA", "DVP&R", "Cost-down Report", "Project Summary"])
+    md = build_report_markdown(workspace_id, project_id, report_type)
+    st.download_button("Download Markdown", md.encode("utf-8"), file_name=f"{slugify(report_type)}.md", mime="text/markdown")
+    docx = markdown_to_docx_bytes(md)
+    if docx:
+        st.download_button("Download Word DOCX", docx, file_name=f"{slugify(report_type)}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    pdf = markdown_to_pdf_bytes(md)
+    if pdf:
+        st.download_button("Download PDF", pdf, file_name=f"{slugify(report_type)}.pdf", mime="application/pdf")
+    xlsx = memory_to_xlsx_bytes(workspace_id, project_id)
+    if xlsx:
+        st.download_button("Download Excel XLSX", xlsx, file_name=f"{slugify(report_type)}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    st.download_button("Export full project package ZIP", project_export_zip(workspace_id, project_id), file_name=f"{project_id}_package.zip", mime="application/zip")
 
-**Engineering use note:** Always verify calculations, CAD automation, FEA/CFD assumptions, standards compliance, and physical test evidence before engineering release.
-        """
-    )
-    st.stop()
 
-# Landing
-if not st.session_state.messages:
-    st.markdown("<div style='height:18vh'></div>", unsafe_allow_html=True)
-    st.markdown("<h2 style='text-align:center;font-weight:500'>Good to see you, Wafeeq.</h2>", unsafe_allow_html=True)
+def calculators_ui(workspace_id: str, project_id: Optional[str]) -> None:
+    st.subheader("Engineering Calculators Pro")
+    calc = st.selectbox("Calculator", ["Beam bending", "Shaft torsion", "Bearing L10 life", "Reynolds number", "Pressure drop", "Heat transfer", "Tolerance stack-up", "Sheet metal bend allowance", "Injection molding checks", "Fastener preload", "Spring design", "Material screening"])
+    result = None
+    if calc == "Beam bending":
+        c1, c2, c3, c4 = st.columns(4)
+        P = c1.number_input("P load [N]", value=100.0)
+        L = c2.number_input("L span [m]", value=1.0)
+        E = c3.number_input("E [Pa]", value=2.1e11, format="%.4e")
+        I = c4.number_input("I [m^4]", value=1e-6, format="%.4e")
+        if st.button("Calculate beam"):
+            result = calc_beam_center_load(P, L, E, I)
+    elif calc == "Shaft torsion":
+        c1, c2, c3, c4 = st.columns(4)
+        T = c1.number_input("Torque [Nm]", value=50.0)
+        d = c2.number_input("Diameter [m]", value=0.02, format="%.4f")
+        L = c3.number_input("Length [m]", value=0.5)
+        G = c4.number_input("G [Pa]", value=79e9, format="%.4e")
+        if st.button("Calculate shaft"):
+            result = calc_shaft_torsion(T, d, L, G)
+    elif calc == "Bearing L10 life":
+        c1, c2, c3, c4 = st.columns(4)
+        C = c1.number_input("C rating [N]", value=10000.0)
+        P = c2.number_input("Equivalent load P [N]", value=1000.0)
+        rpm = c3.number_input("Speed [rpm]", value=1000.0)
+        pexp = c4.selectbox("Bearing type exponent", [3.0, 10/3], format_func=lambda x: "Ball p=3" if x == 3.0 else "Roller p=10/3")
+        if st.button("Calculate L10"):
+            result = calc_bearing_l10(C, P, rpm, pexp)
+    elif calc == "Reynolds number":
+        c1, c2, c3, c4 = st.columns(4)
+        rho = c1.number_input("Density rho [kg/m³]", value=1000.0)
+        V = c2.number_input("Velocity V [m/s]", value=1.0)
+        D = c3.number_input("Diameter/length D [m]", value=0.02, format="%.4f")
+        mu = c4.number_input("Dynamic viscosity mu [Pa.s]", value=0.001, format="%.6f")
+        if st.button("Calculate Reynolds"):
+            result = calc_reynolds(rho, V, D, mu)
+    elif calc == "Pressure drop":
+        c1, c2, c3 = st.columns(3)
+        f = c1.number_input("Friction factor f", value=0.02, format="%.4f")
+        L = c2.number_input("Length L [m]", value=10.0)
+        D = c3.number_input("Diameter D [m]", value=0.02, format="%.4f")
+        c4, c5, c6 = st.columns(3)
+        rho = c4.number_input("Density rho [kg/m³]", value=1000.0)
+        V = c5.number_input("Velocity V [m/s]", value=1.0)
+        k = c6.number_input("Minor loss K", value=0.0)
+        if st.button("Calculate pressure drop"):
+            result = calc_pressure_drop(f, L, D, rho, V, k)
+    elif calc == "Heat transfer":
+        c1, c2, c3 = st.columns(3)
+        h = c1.number_input("h [W/m².K]", value=50.0)
+        A = c2.number_input("Area [m²]", value=0.1)
+        dT = c3.number_input("Delta T [K]", value=20.0)
+        if st.button("Calculate heat transfer"):
+            result = calc_heat_transfer(h, A, dT)
+    elif calc == "Tolerance stack-up":
+        st.caption("Worst-case stack-up: sum of absolute tolerances.")
+        vals = st.text_input("Enter tolerances separated by comma [mm]", value="0.1,0.05,0.2")
+        if st.button("Calculate stack-up"):
+            nums = [abs(float(x.strip())) for x in vals.split(",") if x.strip()]
+            result = {"worst_case_stack_mm": sum(nums), "rss_stack_mm": math.sqrt(sum(x*x for x in nums))}
+    elif calc == "Sheet metal bend allowance":
+        c1, c2, c3, c4 = st.columns(4)
+        angle = c1.number_input("Bend angle [deg]", value=90.0)
+        radius = c2.number_input("Inside radius [mm]", value=1.0)
+        th = c3.number_input("Thickness [mm]", value=1.0)
+        kf = c4.number_input("K-factor", value=0.33)
+        if st.button("Calculate bend allowance"):
+            result = calc_sheet_metal_bend(angle, radius, th, kf)
+    elif calc == "Injection molding checks":
+        c1, c2, c3 = st.columns(3)
+        wall = c1.number_input("Wall [mm]", value=2.5)
+        rib = c2.number_input("Rib thickness [mm]", value=1.2)
+        boss = c3.number_input("Boss wall [mm]", value=2.5)
+        if st.button("Run molding checks"):
+            result = injection_molding_check(wall, rib, boss)
+    elif calc == "Fastener preload":
+        c1, c2 = st.columns(2)
+        proof = c1.number_input("Proof load [N]", value=10000.0)
+        frac = c2.number_input("Preload fraction", value=0.75)
+        if st.button("Calculate preload"):
+            result = calc_fastener_preload(proof, frac)
+    elif calc == "Spring design":
+        c1, c2, c3, c4 = st.columns(4)
+        G = c1.number_input("G [Pa]", value=79e9, format="%.4e")
+        d = c2.number_input("Wire d [m]", value=0.002, format="%.4f")
+        D = c3.number_input("Mean coil D [m]", value=0.02, format="%.4f")
+        n = c4.number_input("Active coils", value=8.0)
+        if st.button("Calculate spring rate"):
+            result = calc_spring_rate(G, d, D, n)
+    elif calc == "Material screening":
+        requirements = st.multiselect("Requirements", ["High stiffness", "High impact", "Chemical resistance", "Low cost", "High temperature", "Low weight", "Corrosion resistance"], default=["High impact", "Low cost"])
+        candidates = ["ABS", "PC", "PP", "PA66", "Aluminum 6061", "Mild steel", "Stainless steel 304"]
+        if st.button("Screen materials"):
+            # Simple transparent heuristic
+            scores = []
+            for m in candidates:
+                score = 50
+                if "Low cost" in requirements and m in ["ABS", "PP", "Mild steel"]: score += 15
+                if "High impact" in requirements and m in ["PC", "ABS"]: score += 15
+                if "High stiffness" in requirements and m in ["Aluminum 6061", "Mild steel", "Stainless steel 304"]: score += 15
+                if "Chemical resistance" in requirements and m in ["PP", "Stainless steel 304"]: score += 15
+                if "High temperature" in requirements and m in ["PC", "Aluminum 6061", "Mild steel", "Stainless steel 304"]: score += 10
+                if "Low weight" in requirements and m in ["ABS", "PP", "PC", "Aluminum 6061"]: score += 10
+                if "Corrosion resistance" in requirements and m in ["PP", "Stainless steel 304", "Aluminum 6061"]: score += 10
+                scores.append({"Material": m, "Suitability score": min(score, 100)})
+            result = sorted(scores, key=lambda x: x["Suitability score"], reverse=True)
+    if result is not None:
+        st.markdown("#### Result")
+        st.json(result)
+        if project_id:
+            add_memory_item(workspace_id, project_id, "calculations", {"calculator": calc, "result": result, "created_at": now_iso()})
 
-# Render chat
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-        if msg.get("downloads"):
-            for dl in msg["downloads"]:
-                st.download_button(dl["label"], data=dl["data"], file_name=dl["file_name"], mime=dl["mime"], key=dl["key"])
 
-prompt = st.chat_input("Ask anything engineering...")
+def cad_studio_ui(workspace_id: str, project_id: Optional[str]) -> None:
+    st.subheader("CAD / SolidWorks Automation Studio")
+    workflow = st.text_area("Workflow request", value="Export the active SolidWorks document as STEP and prepare for DXF export when applicable.")
+    if st.button("Generate VBA macro + validation", use_container_width=True):
+        meta, _ = load_project(workspace_id, project_id)
+        code = generate_solidworks_macro(workflow, meta.get("project_name", "MechAI_Project") if meta else "MechAI_Project")
+        validation = validate_macro_text(code)
+        st.code(code, language="vb")
+        st.dataframe(validation, use_container_width=True, hide_index=True)
+        st.download_button("Download .bas macro", code.encode("utf-8"), file_name="mechai_solidworks_macro.bas", mime="text/plain")
+        st.download_button("Download validation notes", json.dumps(validation, indent=2).encode("utf-8"), file_name="macro_validation.json", mime="application/json")
+        if project_id:
+            add_memory_item(workspace_id, project_id, "artifacts", {"type": "SolidWorks macro", "workflow": workflow, "created_at": now_iso()})
 
-if prompt:
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    frame = detect_problem_frame(prompt, st.session_state.workspace)
-    sources = retrieve(prompt, frame.workspace, st.session_state.project, top_k=7)
-    risks = build_risk_matrix(frame, prompt)
-    calcs = engineering_calculators(prompt, frame)
-    answer = build_answer(prompt, frame, sources, risks, calcs, project=st.session_state.project)
-    downloads = []
-    # CAD artifact
-    if frame.workspace == "CAD / SolidWorks" or any(k in prompt.lower() for k in ["solidworks", "macro", "dxf", "step"]):
-        macro = generate_solidworks_macro(prompt)
-        validation = "\n".join(validate_macro(macro))
-        answer += "\n\n#### CAD / SolidWorks artifact generated\n"
-        answer += "- A `.bas` macro skeleton is available below. Review paths, backup files, and test on a copy before use.\n"
-        answer += "\n**Macro validation**\n" + "\n".join([f"- {x}" for x in validate_macro(macro)])
-        downloads.append({"label": "Download SolidWorks VBA .bas", "data": macro.encode("utf-8"), "file_name": "mechai_solidworks_macro.bas", "mime": "text/plain", "key": str(uuid.uuid4())})
-        downloads.append({"label": "Download Macro Validation Notes", "data": validation.encode("utf-8"), "file_name": "macro_validation.txt", "mime": "text/plain", "key": str(uuid.uuid4())})
-    # Simulation artifact
-    if frame.workspace == "Simulation / FEA" or "ansys" in prompt.lower() or "fea" in prompt.lower():
-        apdl = generate_apdl_plan(prompt)
-        answer += "\n\n#### FEA artifact generated\n- ANSYS APDL starter skeleton is available below. Treat it as a setup scaffold, not release evidence.\n"
-        downloads.append({"label": "Download ANSYS APDL .mac", "data": apdl.encode("utf-8"), "file_name": "mechai_ansys_static_structural.mac", "mime": "text/plain", "key": str(uuid.uuid4())})
-    if frame.workspace == "CFD / Thermal" or "fluent" in prompt.lower() or "cfd" in prompt.lower():
-        jou = generate_fluent_journal(prompt)
-        answer += "\n\n#### CFD artifact generated\n- Fluent journal starter skeleton is available below. Validate domain, mesh, boundary conditions, y+, and convergence.\n"
-        downloads.append({"label": "Download Fluent Journal .jou", "data": jou.encode("utf-8"), "file_name": "mechai_fluent_setup.jou", "mime": "text/plain", "key": str(uuid.uuid4())})
-    append_memory(st.session_state.project, prompt, answer, frame, risks, calcs, sources)
-    st.session_state.messages.append({"role": "assistant", "content": f"{WORKSPACES[frame.workspace]['icon']} **{frame.agent} · Internal Knowledge Only · Engineering Review Board v26**\n\n" + answer, "downloads": downloads})
-    st.rerun()
+
+def simulation_studio_ui(workspace_id: str, project_id: Optional[str]) -> None:
+    st.subheader("FEA / CFD Simulation Studio")
+    mode = st.selectbox("Simulation tool", ["FEA setup scoring", "ANSYS APDL starter", "CFD setup scoring", "Fluent journal starter", "SolidWorks Simulation setup notes", "Validation checklist"])
+    prompt = st.text_area("Simulation context", value="Bracket loaded by 2 kN. Material and constraints need to be defined.")
+    meta, _ = load_project(workspace_id, project_id)
+    if st.button("Generate simulation output", use_container_width=True):
+        if "FEA" in mode:
+            score, rows = fea_setup_score(prompt, meta)
+            st.metric("FEA setup quality", f"{score}/100")
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+        if "CFD" in mode:
+            score, rows = cfd_setup_score(prompt, meta)
+            st.metric("CFD setup quality", f"{score}/100")
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+        if "APDL" in mode:
+            code = generate_apdl(meta.get("project_name", "MechAI_Project") if meta else "MechAI_Project", prompt)
+            st.code(code, language="text")
+            st.download_button("Download ANSYS .mac", code.encode("utf-8"), file_name="mechai_ansys_static_starter.mac", mime="text/plain")
+        if "Fluent" in mode:
+            code = generate_fluent_journal(meta.get("project_name", "MechAI_Project") if meta else "MechAI_Project")
+            st.code(code, language="text")
+            st.download_button("Download Fluent .jou", code.encode("utf-8"), file_name="mechai_fluent_starter.jou", mime="text/plain")
+        if "SolidWorks" in mode:
+            notes = """SolidWorks Simulation setup notes:
+1. Define study type and objective.
+2. Assign verified material properties.
+3. Apply fixtures that represent the real support condition.
+4. Apply loads with correct direction, distribution and units.
+5. Define contacts carefully.
+6. Mesh with convergence on quantity of interest.
+7. Compare reactions and hand calculations before release.
+"""
+            st.text(notes)
+            st.download_button("Download setup notes", notes.encode("utf-8"), file_name="solidworks_simulation_setup_notes.txt", mime="text/plain")
+        if "Validation" in mode:
+            plan = verification_plan("Simulation / FEA") + verification_plan("CFD / Thermal")
+            st.markdown("\n".join(f"- {x}" for x in plan))
+
+
+def quality_tests_ui() -> None:
+    st.subheader("Evaluation & Quality Testing System")
+    st.caption("Regression-style checks to detect whether future versions lose important engineering behavior.")
+    if st.button("Run quality tests", use_container_width=True):
+        results = run_quality_tests()
+        st.dataframe(results, use_container_width=True, hide_index=True)
+        passed = sum(1 for r in results if r["Status"] == "Pass")
+        st.metric("Quality pass rate", f"{passed}/{len(results)}")
+
+
+def chat_ui(workspace_id: str, project_id: Optional[str]) -> None:
+    workspace = st.selectbox("Workspace", list(WORKSPACES.keys()), index=0)
+    if project_id:
+        project_dashboard(workspace_id, project_id)
+    else:
+        project_dashboard(workspace_id, None)
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+    prompt = st.chat_input("Ask MechAI about design, DFM, materials, CAD, FEA, CFD, reports...")
+    if prompt:
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.write(prompt)
+        meta, _ = load_project(workspace_id, project_id)
+        routed = route_workspace(prompt, workspace)
+        answer = build_engineering_answer(prompt, routed, meta, workspace_id, project_id)
+        with st.chat_message("assistant"):
+            st.markdown(answer)
+        st.session_state.messages.append({"role": "assistant", "content": answer})
+
+
+def main() -> None:
+    st.set_page_config(page_title="MechAI Pro", page_icon="⚙️", layout="wide", initial_sidebar_state="expanded")
+    inject_css()
+    seed_knowledge_library()
+    ensure_state()
+    workspace_id, user_name, role = sidebar_identity()
+    project_id = sidebar_project_system(workspace_id, role)
+    st.sidebar.markdown("---")
+    page = st.sidebar.radio("Studio", ["Chat", "Project", "Reference Vault", "Templates", "Reports", "Calculators", "CAD / SolidWorks", "Simulation", "Quality Tests", "Admin"], label_visibility="collapsed")
+    st.sidebar.markdown("---")
+    st.sidebar.caption("Internal Knowledge Only · No OpenAI/Gemini core dependency")
+    st.sidebar.caption(f"Build: {APP_VERSION}")
+    new_project_form(workspace_id)
+    if page == "Chat":
+        chat_ui(workspace_id, project_id)
+    elif page == "Project":
+        project_dashboard(workspace_id, project_id)
+        if project_id:
+            meta, mem = load_project(workspace_id, project_id)
+            with st.expander("Edit project metadata"):
+                with st.form("edit_project"):
+                    for key in ["project_name", "project_type", "part_type", "material", "process", "manufacturing_method", "annual_volume", "target_use"]:
+                        meta[key] = st.text_input(key.replace("_", " ").title(), value=str(meta.get(key, "")))
+                    if st.form_submit_button("Save metadata"):
+                        save_project(workspace_id, project_id, meta, mem); st.success("Saved.")
+            lesson = st.text_area("Add lesson learned")
+            if st.button("Save lesson") and lesson:
+                add_memory_item(workspace_id, project_id, "lessons_learned", {"text": lesson, "created_at": now_iso(), "by": st.session_state.get("user_name")})
+                st.success("Lesson saved.")
+    elif page == "Reference Vault":
+        reference_vault_ui(workspace_id, project_id, role)
+    elif page == "Templates":
+        templates_ui()
+    elif page == "Reports":
+        report_studio_ui(workspace_id, project_id)
+    elif page == "Calculators":
+        calculators_ui(workspace_id, project_id)
+    elif page == "CAD / SolidWorks":
+        cad_studio_ui(workspace_id, project_id)
+    elif page == "Simulation":
+        simulation_studio_ui(workspace_id, project_id)
+    elif page == "Quality Tests":
+        quality_tests_ui()
+    elif page == "Admin":
+        st.subheader("Admin / Multi-tenant Foundation")
+        st.info("This Streamlit build provides local workspace/user foundations. For production multi-tenant use, move identity, files and projects to a real database/storage layer.")
+        st.write("Workspace:", workspace_id)
+        st.write("User:", user_name)
+        st.write("Role:", role)
+        projects = list_projects(workspace_id)
+        st.dataframe(projects, use_container_width=True, hide_index=True)
+        if project_id:
+            st.download_button("Download active project package", project_export_zip(workspace_id, project_id), file_name=f"{project_id}_package.zip", mime="application/zip")
+
+if __name__ == "__main__":
+    main()
