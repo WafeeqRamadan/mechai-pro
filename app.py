@@ -1,21 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-MechAI Pro v27 — Universal Mechanical Engineering OS
-=====================================================
-A knowledge-first mechanical engineering operating system foundation.
+MechAI Pro v31-v36 — Universal Mechanical Intelligence Platform
+========================================================================================
+Knowledge-first Mechanical Engineering OS with:
+- Supabase persistent storage and database
+- Reference upload with metadata, extraction, chunking, duplicate detection, quality scoring
+- Project/workspace-level retrieval with citations
+- Supabase Auth login/signup
+- Users, workspaces, projects, roles and basic permissions
 
-This build includes the requested v27-v34 capabilities in a single Streamlit app:
-- Universal Project System
-- Universal Reference Vault
-- Engineering Templates Library
-- Engineering Report Studio
-- Engineering Calculators Pro
-- CAD / SolidWorks Automation Studio
-- FEA / CFD Simulation Studio
-- Account / workspace / permission foundation for multi-tenant evolution
-
-No OpenAI/Gemini dependency. The app uses internal knowledge packs, project memory,
-calculators, scoring engines, and deterministic engineering review logic.
+Full-file build: Supabase Auth, persistent Reference Vault, project memory, Mechanical Knowledge Graph, multi-agent review board, calculators, CAD/SolidWorks and simulation intelligence. No OpenAI/Gemini dependency.
 """
 from __future__ import annotations
 
@@ -25,18 +19,24 @@ import html
 import io
 import json
 import math
+import mimetypes
 import os
 import re
-import shutil
 import textwrap
 import uuid
 import zipfile
-from dataclasses import dataclass, asdict
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import streamlit as st
+
+try:
+    from supabase import Client, create_client  # type: ignore
+except Exception:
+    Client = None  # type: ignore
+    create_client = None  # type: ignore
 
 try:
     import PyPDF2  # type: ignore
@@ -60,15 +60,13 @@ try:
 except Exception:
     Workbook = None
 
-APP_VERSION = "v27_UNIVERSAL_ENGINEERING_OS_2026_06_13"
+APP_VERSION = "v36_1_ZERO_FRICTION_PROJECT_START_2026_06_15"
 APP_TITLE = "MechAI Pro"
 ROOT = Path(__file__).resolve().parent
-DATA_DIR = ROOT / "mechai_data"
-TENANT_DIR = DATA_DIR / "tenants"
 GLOBAL_KNOWLEDGE_DIR = ROOT / "knowledge_packs"
-EXPORT_DIR = DATA_DIR / "exports"
-for p in [DATA_DIR, TENANT_DIR, GLOBAL_KNOWLEDGE_DIR, EXPORT_DIR]:
-    p.mkdir(parents=True, exist_ok=True)
+LOCAL_CACHE_DIR = ROOT / "mechai_local_cache"
+LOCAL_CACHE_DIR.mkdir(exist_ok=True)
+GLOBAL_KNOWLEDGE_DIR.mkdir(exist_ok=True)
 
 WORKSPACES = {
     "General engineering": {"icon": "🧠", "folder": None, "agent": "Chief Mechanical Engineering Board"},
@@ -85,1697 +83,1813 @@ PROJECT_TYPES = [
     "Product design", "DFM review", "Material selection", "FEA setup", "CFD setup",
     "SolidWorks automation", "Failure analysis", "Cost reduction", "Patent / innovation review",
 ]
-
 SOURCE_TYPES = [
-    "Open reference", "Personal reference", "Project reference", "Team reference",
-    "Public datasheet", "Supplier catalog", "Design guide", "Standards summary", "Own engineering note",
+    "Open reference", "Personal reference", "Project reference", "Team reference", "Public datasheet",
+    "Supplier catalog", "Design guide", "Standards summary", "Own engineering note", "Company standard",
 ]
 CONFIDENTIALITY = ["Public", "Internal", "Private", "Confidential"]
+APPROVAL_STATUS = ["Draft", "Under review", "Approved", "Deprecated"]
 ROLES = ["Owner", "Admin", "Engineer", "Reviewer", "Viewer"]
+UPLOAD_EXTENSIONS = {".pdf", ".txt", ".md", ".csv"}
 
 # -----------------------------------------------------------------------------
-# Seeded global knowledge library
+# Styling
 # -----------------------------------------------------------------------------
-
-KNOWLEDGE_SEED: Dict[str, Dict[str, str]] = {
-    "mechanical_design": {
-        "beams.md": """
-# Beams Expert Pack
-Scope: bending, shear, deflection, support conditions, load paths, stiffness and validation.
-Required inputs: load case, supports, span, cross-section, material, deflection limit, safety factor.
-Core equations: bending stress sigma=M*c/I; simply-supported center load deflection delta=P*L^3/(48*E*I); cantilever end load delta=P*L^3/(3*E*I).
-Decision logic: if support or cross-section is missing, do not release sizing; if cyclic loads exist, switch to fatigue reasoning; check stiffness and strength separately.
-Failure modes: yielding, excessive deflection, buckling, vibration, local stress concentration, joint failure.
-Validation: hand calculation, FEA sanity check, physical load test when critical.
+st.set_page_config(page_title="MechAI Pro", page_icon="⚙️", layout="wide", initial_sidebar_state="expanded")
+st.markdown(
+    """
+<style>
+:root { --bg: #0f0f0f; --panel: #171717; --panel2:#202020; --border:#2d2d2d; --text:#f1f1f1; --muted:#a3a3a3; }
+html, body, [data-testid="stAppViewContainer"] { background:#0f0f0f; color:#f1f1f1; }
+[data-testid="stSidebar"] { background:#151515; border-right:1px solid #2b2b2b; min-width:300px !important; max-width:300px !important; }
+[data-testid="stHeader"] { background: rgba(15,15,15,0.85); }
+.block-container { max-width: 1160px; padding-top: 1.2rem; padding-bottom: 7rem; }
+.mech-card { background:#171717; border:1px solid #2d2d2d; border-radius:18px; padding:18px 20px; margin:10px 0; }
+.mech-small { color:#a3a3a3; font-size:0.88rem; }
+.mech-pill { display:inline-block; border:1px solid #343434; background:#1d1d1d; border-radius:999px; padding:4px 10px; margin:3px 4px 3px 0; font-size:0.82rem; color:#d0d0d0; }
+.mech-risk-high { color:#ff8a8a; font-weight:700; }
+.mech-risk-medium { color:#ffd27a; font-weight:700; }
+.mech-risk-low { color:#8ee6a8; font-weight:700; }
+.mech-source { border-left:3px solid #666; padding-left:12px; color:#cfcfcf; font-size:0.9rem; }
+footer {visibility:hidden;}
+#MainMenu {visibility:hidden;}
+</style>
 """,
-        "shafts.md": """
-# Shafts Expert Pack
-Scope: torque, bending, fatigue, keyways, bearing seats, critical speed and manufacturability.
-Required inputs: torque, speed, bending moment, bearing layout, diameter, material, duty cycle, keyway/spline details.
-Equations: solid shaft torsional shear tau=16T/(pi*d^3); angle of twist theta=T*L/(J*G), J=pi*d^4/32.
-Decision logic: keyways increase fatigue risk; high speed requires critical speed check; combined bending/torsion requires equivalent stress.
-Failure modes: torsional yielding, bending fatigue, fretting, keyway cracking, excessive twist, resonance.
-""",
-        "bearings.md": """
-# Bearings Expert Pack
-Scope: bearing selection, L10 life, loads, lubrication, fits, speed and temperature.
-Inputs: radial/axial load, speed, life target, type, lubrication, contamination, temperature.
-Equation: L10=(C/P)^p million revolutions; p=3 ball bearings, p=10/3 roller bearings; L10h=1e6/(60n)*(C/P)^p.
-Decision logic: unknown load spectrum lowers confidence; contamination/lubrication require service factors; rotating ring fit must be checked.
-Failures: spalling, overheating, lubrication starvation, contamination wear, brinelling, misalignment.
-""",
-        "gears.md": """
-# Gears Expert Pack
-Scope: preliminary gear sizing, ratio, torque, tooth bending, pitting, noise, heat and lubrication.
-Inputs: power, speed, ratio, torque, gear type, module/DP, face width, material, heat treatment, duty cycle.
-Decision logic: shock load requires service factor; quiet operation may need helical gears; compact gearboxes need thermal check.
-Failures: bending fracture, pitting, scuffing, wear, noise, misalignment, lubrication failure.
-""",
-        "springs.md": """
-# Springs Expert Pack
-Scope: compression, extension, torsion springs; stiffness, stress, fatigue, buckling, solid height.
-Inputs: load range, deflection, envelope, cycle life, temperature, material, end style.
-Decision logic: cyclic duty drives fatigue; high temperature drives relaxation risk; slender compression springs may buckle.
-Failures: fatigue fracture, coil bind, permanent set, relaxation, buckling, corrosion.
-""",
-        "fasteners.md": """
-# Fasteners Expert Pack
-Scope: bolted joints, preload, separation, shear, fatigue, loosening and assembly repeatability.
-Inputs: bolt size, grade, clamp length, joint materials, friction, torque method, external loads, vibration.
-Core logic: preload is the main design variable; torque-control has high scatter; fatigue risk is reduced by adequate preload and joint stiffness.
-Failures: loosening, thread stripping, bolt tensile failure, shear, bearing, fatigue, galvanic corrosion.
-""",
-        "fatigue.md": """
-# Fatigue Expert Pack
-Scope: cyclic loads, endurance, mean stress, stress concentration, surface finish and reliability.
-Inputs: load spectrum, cycles, material, surface finish, size, temperature, notches, welds.
-Decision logic: if load cycles are unknown, fatigue confidence is low; stress concentrations and poor finish reduce life; welds require weld-specific fatigue rules.
-Failures: crack initiation at notch/keyway/weld, propagation, sudden fracture.
-""",
-        "gdnt_tolerances.md": """
-# GD&T and Tolerances Expert Pack
-Scope: datum strategy, functional tolerancing, tolerance stack-up, process capability and inspection.
-Inputs: function, mating parts, datums, CTQ dimensions, manufacturing process, inspection method.
-Decision logic: avoid arbitrary tight tolerances; tolerance should follow function and process capability; define datums before feature controls.
-Failures: assembly interference, excessive inspection cost, poor repeatability, supplier disputes.
-""",
-    },
-    "manufacturing_dfm": {
-        "injection_molding_expert.md": """
-# Injection Molding DFM Expert Pack
-Scope: thermoplastic part manufacturability, wall thickness, draft, ribs, bosses, sink, warpage, tooling and quality.
-Required inputs: material grade, nominal wall thickness, part size, ribs/bosses/snap-fits, surface class, production volume, tolerance targets.
-Decision logic: prioritize uniform wall thickness; avoid thick bosses; use ribs for stiffness; add draft for ejection; consider gate, parting line and ejector marks early.
-Risk rules: unknown material and wall thickness create high risk; tall ribs and thick bosses increase sink/warpage risk; tight tolerances increase tooling and process risk.
-Validation: mold-flow review for critical parts, first article inspection, shrinkage verification, process capability study.
-""",
-        "sheet_metal_expert.md": """
-# Sheet Metal DFM Expert Pack
-Scope: bending, bend radius, K-factor, bend allowance, hole-to-bend distance, flat patterns and manufacturability.
-Inputs: material, thickness, bend angle, inside radius, tooling, grain direction, tolerances.
-Decision logic: inside bend radius should suit material/tooling; holes near bends distort; avoid complex formed features without tooling review.
-Validation: flat pattern review, bend sample, tolerance capability check.
-""",
-        "machining_expert.md": """
-# Machining DFM Expert Pack
-Scope: CNC milling/turning, setups, tool access, tolerances, surface finish, cycle time and cost.
-Inputs: material, geometry, tolerances, finish, volume, datum plan, tool access.
-Decision logic: deep pockets, sharp internal corners, tight tolerances and hard materials increase cost; design for fewer setups and standard tools.
-Validation: CAM review, setup plan, inspection plan, first article inspection.
-""",
-        "assembly_dfa_expert.md": """
-# Assembly DFA Expert Pack
-Scope: part count reduction, orientation, fastening, serviceability, poka-yoke and assembly time.
-Inputs: mating parts, assembly sequence, fasteners, access, tools, field service requirements.
-Decision logic: reduce part count; avoid ambiguous orientation; design self-locating features; avoid hidden fasteners and fragile assembly steps.
-Validation: assembly trial, time study, ergonomic review, error-proofing check.
-""",
-        "tolerance_capability_expert.md": """
-# Tolerance Capability Expert Pack
-Scope: process capability, tolerance feasibility, inspection, CTQ dimensions and cost impact.
-Inputs: manufacturing process, tolerance values, CTQ list, inspection equipment, supplier capability.
-Decision logic: tight tolerances must be justified by function; process capability should be matched to tolerance; unknown CTQ lowers confidence.
-Validation: capability study, gauge R&R, first article inspection.
-""",
-        "cost_reduction_expert.md": """
-# Cost Reduction Expert Pack
-Scope: material, process, tooling, cycle time, assembly, scrap, inspection and logistics cost drivers.
-Inputs: volume, material, process, cycle time, scrap rate, labor content, tooling complexity, supplier constraints.
-Decision logic: attack cost through part count reduction, standard materials, process simplification, tolerance relaxation and cycle-time reduction.
-""",
-        "quality_control_expert.md": """
-# Quality Control Expert Pack
-Scope: inspection plans, CTQs, failure modes, process capability, first article, sampling and production stability.
-Inputs: CTQ dimensions, critical functions, process, volume, inspection method, acceptance criteria.
-Decision logic: every high-risk DFM item needs a verification method; inspection should focus on CTQs and failure modes, not every dimension equally.
-""",
-        "welding.md": """
-# Welding DFM Expert Pack
-Scope: weld joint design, distortion, access, fixture strategy, inspection and fatigue.
-Inputs: material, thickness, joint type, load path, weld process, access, fatigue duty.
-Decision logic: design welds for access and inspection; avoid over-welding; account for heat distortion; fatigue welds require special review.
-""",
-    },
-    "materials_selection": {
-        "thermoplastics.md": """
-# Thermoplastics Materials Expert Pack
-Scope: ABS, PC, PP, PA, POM and other plastics for mechanical parts.
-Inputs: stiffness, toughness, temperature, chemical exposure, UV, appearance, process, cost, availability.
-Decision logic: ABS is common for enclosures; PC improves impact/temperature; PP improves chemical resistance and low cost but lower stiffness; PA absorbs moisture.
-Risks: creep, UV degradation, shrinkage, warpage, chemical attack, flammability.
-""",
-        "metals.md": """
-# Metals Materials Expert Pack
-Scope: steels, stainless steels, aluminum alloys, brass/bronze and cast alloys.
-Inputs: strength, stiffness, corrosion, temperature, weight, manufacturability, surface treatment, cost.
-Decision logic: aluminum reduces weight; steels improve strength/cost; stainless improves corrosion; material choice must match manufacturing process.
-""",
-        "elastomers.md": """
-# Elastomers Expert Pack
-Scope: rubber-like materials, seals, gaskets, vibration isolation and flexible components.
-Inputs: hardness, compression set, temperature, chemicals, UV, seal pressure, fatigue.
-Decision logic: select by environment and compression set, not hardness alone.
-""",
-        "composites.md": """
-# Composites Expert Pack
-Scope: fiber-reinforced plastics, laminates and anisotropic design logic.
-Inputs: load direction, stiffness, manufacturing process, environment, damage tolerance.
-Decision logic: align fibers to load paths; validate joints and impact/delamination risks.
-""",
-        "corrosion.md": """
-# Corrosion Expert Pack
-Scope: galvanic corrosion, environmental exposure, coatings, stainless/passivation and material compatibility.
-Inputs: environment, humidity, chemicals, mating metals, coating, service life.
-Decision logic: dissimilar metals require galvanic review; coatings need inspection and damage tolerance.
-""",
-        "temperature_limits.md": """
-# Temperature Limits Expert Pack
-Scope: high/low temperature effects, creep, softening, embrittlement and thermal expansion.
-Inputs: service temperature, peak temperature, time at temperature, load, material family.
-Decision logic: plastics near Tg/heat-deflection limits need creep and deformation review; thermal expansion affects tolerances.
-""",
-        "ashby_selection_logic.md": """
-# Ashby-Style Material Selection Logic
-Scope: function-objective-constraints-free variables methodology.
-Inputs: function, constraints, objective, free variables, candidate processes.
-Decision logic: define requirements before candidates; screen by constraints then rank by objective such as mass/cost/stiffness.
-""",
-    },
-    "simulation_fea": {
-        "static_structural.md": """
-# Static Structural FEA Expert Pack
-Scope: linear/nonlinear static structural setup, loads, supports, contacts, mesh and interpretation.
-Inputs: objective, geometry, material, loads, constraints, contacts, failure criteria, validation target.
-Decision logic: wrong boundary conditions invalidate results; validate with hand calculation; use mesh convergence; report stress away from singularities.
-""",
-        "modal_analysis.md": """
-# Modal Analysis Expert Pack
-Scope: natural frequencies, mode shapes, constraints and resonance risk.
-Inputs: mass, stiffness, constraints, operational excitation frequencies.
-Decision logic: compare natural frequencies to excitation; verify mass and boundary conditions; do not treat mode shape stress as static stress.
-""",
-        "buckling.md": """
-# Buckling FEA Expert Pack
-Scope: linear eigenvalue buckling, nonlinear buckling and slender structures.
-Inputs: geometry imperfections, load, supports, material, initial defects.
-Decision logic: eigenvalue buckling is optimistic; use nonlinear analysis for critical structures.
-""",
-        "fatigue_fea.md": """
-# Fatigue FEA Expert Pack
-Scope: stress-life/strain-life fatigue based on FEA stress results.
-Inputs: load cycles, stress history, material fatigue data, surface finish, notch effects.
-Decision logic: mesh and stress concentration quality control are critical; mean stress correction may be needed.
-""",
-        "contacts.md": """
-# Contact Modeling Expert Pack
-Scope: bonded/frictional/no-separation contacts, contact stiffness, convergence and load transfer.
-Inputs: contact surfaces, friction, preload, expected separation/sliding.
-Decision logic: bonded contacts can over-stiffen; frictional contacts require convergence checks.
-""",
-        "mesh_convergence.md": """
-# Mesh Convergence Expert Pack
-Scope: element quality, refinement strategy, local stress, displacement and reaction convergence.
-Inputs: geometry, stress gradients, element type, result target.
-Decision logic: validate quantities of interest, not just pretty plots; singularities should not drive design decisions.
-""",
-        "validation.md": """
-# FEA Validation Expert Pack
-Scope: analytical checks, test correlation, benchmark cases, sanity checks and uncertainty.
-Inputs: expected load path, hand calc, test data, acceptance criteria.
-Decision logic: simulation without validation is evidence-limited; define acceptance before solving.
-""",
-    },
-    "cfd_thermal": {
-        "internal_flow.md": """
-# Internal Flow CFD Expert Pack
-Scope: pipe/duct/channel flow, pressure drop, flow regime, thermal flow and boundary conditions.
-Inputs: fluid, density, viscosity, flow rate/velocity, diameter, roughness, temperature, inlet/outlet conditions.
-Decision logic: calculate Reynolds number first; validate pressure drop against correlations; check mass conservation.
-""",
-        "external_flow.md": """
-# External Flow CFD Expert Pack
-Scope: aerodynamic/hydrodynamic external flow, domain sizing, far-field boundaries and wake refinement.
-Inputs: velocity, fluid, characteristic length, domain, turbulence intensity, target coefficients.
-Decision logic: domain size and boundary placement affect results; mesh wake and boundary layer carefully.
-""",
-        "reynolds_number.md": """
-# Reynolds Number Expert Pack
-Re = rho*V*D/mu. It classifies flow regime and drives laminar/turbulent model selection.
-Typical pipe thresholds: laminar below about 2300, transitional around 2300-4000, turbulent above about 4000.
-""",
-        "turbulence_models.md": """
-# Turbulence Models Expert Pack
-Scope: k-epsilon, k-omega SST, laminar and transitional modeling.
-Decision logic: use model based on physics, y+, wall treatment, separation, adverse pressure gradient and validation needs.
-""",
-        "y_plus.md": """
-# y+ Expert Pack
-Scope: wall resolution for turbulence modeling.
-Decision logic: low-Re wall-resolved methods often require y+ near 1; wall functions use higher y+. State target before meshing.
-""",
-        "pressure_drop.md": """
-# Pressure Drop Expert Pack
-Scope: pipe/duct pressure loss, friction factor, minor losses and validation.
-Equation: Darcy-Weisbach deltaP=f*(L/D)*(rho*V^2/2) plus minor losses.
-""",
-        "heat_transfer.md": """
-# Heat Transfer Expert Pack
-Scope: convection, conduction, thermal resistance, heat sinks and thermal validation.
-Equation examples: q=h*A*deltaT, conduction q=k*A*deltaT/L, thermal resistance networks.
-""",
-    },
-    "cad_solidworks": {
-        "macro_generation.md": """
-# SolidWorks Macro Generation Expert Pack
-Scope: VBA macro generation, model/document access, selection, export and error handling.
-Rules: use explicit object variables; check active document; avoid destructive operations; validate paths; include error handler.
-""",
-        "macro_validation.md": """
-# SolidWorks Macro Validation Expert Pack
-Check: option explicit, active document guard, type check, save path validation, error handling, no silent overwrite, clear user instructions.
-""",
-        "batch_export_workflows.md": """
-# Batch Export Workflow Expert Pack
-Scope: exporting STEP, DXF, PDF, drawings and flat patterns.
-Rules: create backup, decide naming convention, handle assemblies/drawings/parts differently, log success/failure per file.
-""",
-        "drawing_automation.md": """
-# Drawing Automation Expert Pack
-Scope: views, dimensions, sheets, title block, revision notes and PDF export.
-Rules: never assume drawing standard; request template, units, projection, tolerance style.
-""",
-        "bom_export.md": """
-# BOM Export Expert Pack
-Scope: assembly BOM extraction, custom properties, part numbers, quantities, materials, revisions.
-Rules: define property mapping and handle virtual components/suppressed parts.
-""",
-    },
-    "innovation_patent": {
-        "idea_evaluation.md": """
-# Idea Evaluation Expert Pack
-Scope: problem-solution fit, novelty, technical feasibility, manufacturability and business value.
-Decision logic: separate what is new, useful, manufacturable and commercially valuable.
-""",
-        "prior_art_search.md": """
-# Prior Art Search Expert Pack
-Scope: keyword/classification search, competitor scan, functional decomposition and claim risk.
-Decision logic: search by function, mechanism, outcome, application and alternative terminology.
-""",
-        "claim_structure.md": """
-# Claim Structure Expert Pack
-Scope: independent/dependent claim thinking for engineering inventions.
-Warning: not legal advice; patent attorney review required.
-""",
-        "prototype_strategy.md": """
-# Prototype Strategy Expert Pack
-Scope: proof of principle, functional prototype, design validation and pilot manufacturing.
-Decision logic: prototype the riskiest assumptions first.
-""",
-    },
-}
+    unsafe_allow_html=True,
+)
 
 # -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
 
 def now_iso() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(timezone.utc).isoformat()
 
 
-def slugify(text: str, fallback: str = "item") -> str:
-    text = (text or "").strip().lower()
-    text = re.sub(r"[^a-z0-9\u0600-\u06FF]+", "_", text)
-    text = text.strip("_")
-    return text or fallback
+def safe_slug(text: str, fallback: str = "item") -> str:
+    text = (text or fallback).strip().lower()
+    text = re.sub(r"[^a-z0-9\u0600-\u06FF]+", "_", text, flags=re.I).strip("_")
+    return text[:80] or fallback
 
 
-def safe_read_json(path: Path, default: Any) -> Any:
-    if not path.exists():
-        return default
+def get_secret(name: str, default: str = "") -> str:
+    """Read a secret from Streamlit or environment and normalize whitespace/URL slashes."""
+    value = default
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        if name in st.secrets:
+            value = str(st.secrets[name])
+        else:
+            value = os.environ.get(name, default)
     except Exception:
-        return default
+        value = os.environ.get(name, default)
+    value = str(value).strip()
+    if name == "SUPABASE_URL":
+        value = value.rstrip("/")
+    return value
 
 
-def safe_write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
-def strip_md(text: str) -> str:
-    text = re.sub(r"^#{1,6}\s*", "", text, flags=re.M)
-    text = re.sub(r"\*\*|__|`", "", text)
-    return text.strip()
+def estimate_tokens(text: str) -> int:
+    return max(1, int(len(text.split()) * 1.25))
 
 
-def tokenize(text: str) -> List[str]:
-    words = re.findall(r"[a-zA-Z0-9_\u0600-\u06FF]+", text.lower())
-    stop = {"the", "and", "for", "with", "that", "this", "from", "into", "what", "how", "create", "review", "analysis", "please", "عايز", "اعمل", "ايه", "في", "من", "على", "عن"}
-    return [w for w in words if len(w) > 2 and w not in stop]
-
-
-def file_text(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8", errors="ignore")
-    except Exception:
-        return ""
-
-
-def write_file(path: Path, data: str | bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if isinstance(data, bytes):
-        path.write_bytes(data)
-    else:
-        path.write_text(data, encoding="utf-8")
-
-
-def seed_knowledge_library() -> None:
-    for folder, files in KNOWLEDGE_SEED.items():
-        target = GLOBAL_KNOWLEDGE_DIR / folder
-        target.mkdir(parents=True, exist_ok=True)
-        for name, text in files.items():
-            f = target / name
-            if not f.exists() or len(f.read_text(encoding="utf-8", errors="ignore")) < 50:
-                f.write_text(textwrap.dedent(text).strip() + "\n", encoding="utf-8")
-
-
-def extract_uploaded_text(uploaded) -> str:
-    name = uploaded.name.lower()
-    data = uploaded.getvalue()
-    if name.endswith(".pdf") and PyPDF2 is not None:
+def read_uploaded_text(filename: str, data: bytes) -> str:
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".pdf":
+        if PyPDF2 is None:
+            return "[PDF extraction unavailable: PyPDF2 is not installed.]"
         try:
             reader = PyPDF2.PdfReader(io.BytesIO(data))
-            pages = []
-            for p in reader.pages[:80]:
-                pages.append(p.extract_text() or "")
-            return "\n".join(pages)
-        except Exception as e:
-            return f"[PDF extraction failed: {e}]"
+            pages: List[str] = []
+            for i, page in enumerate(reader.pages[:80]):
+                try:
+                    pages.append(page.extract_text() or "")
+                except Exception:
+                    pages.append("")
+            return "\n\n".join(pages).strip()
+        except Exception as exc:
+            return f"[PDF extraction failed: {exc}]"
+    if suffix == ".csv":
+        try:
+            decoded = data.decode("utf-8", errors="replace")
+            return decoded[:300_000]
+        except Exception:
+            return "[CSV extraction failed.]"
     try:
-        return data.decode("utf-8", errors="ignore")
+        return data.decode("utf-8", errors="replace")[:400_000]
     except Exception:
-        return "[Could not decode file as text.]"
+        return "[Text extraction failed.]"
 
 
-def ensure_state() -> None:
-    defaults = {
-        "messages": [],
-        "active_project_id": None,
-        "template_to_use": "",
-        "show_new_project": False,
-        "active_tab": "Chat",
-    }
-    for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
-
-# -----------------------------------------------------------------------------
-# Data paths and project system
-# -----------------------------------------------------------------------------
-
-def tenant_path(workspace_id: str) -> Path:
-    return TENANT_DIR / slugify(workspace_id, "personal_workspace")
-
-
-def tenant_projects_dir(workspace_id: str) -> Path:
-    p = tenant_path(workspace_id) / "projects"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
-
-
-def users_file(workspace_id: str) -> Path:
-    return tenant_path(workspace_id) / "users.json"
-
-
-def project_dir(workspace_id: str, project_id: str) -> Path:
-    p = tenant_projects_dir(workspace_id) / project_id
-    p.mkdir(parents=True, exist_ok=True)
-    for sub in ["references", "reports", "artifacts", "uploads"]:
-        (p / sub).mkdir(exist_ok=True)
-    return p
-
-
-def list_projects(workspace_id: str) -> List[Dict[str, Any]]:
-    projects = []
-    for d in tenant_projects_dir(workspace_id).iterdir():
-        if d.is_dir() and (d / "project.json").exists():
-            data = safe_read_json(d / "project.json", {})
-            data["project_id"] = d.name
-            projects.append(data)
-    projects.sort(key=lambda x: x.get("updated_at", x.get("created_at", "")), reverse=True)
-    return projects
-
-
-def create_project(workspace_id: str, meta: Dict[str, Any]) -> str:
-    project_id = slugify(meta.get("project_name", "project")) + "_" + uuid.uuid4().hex[:6]
-    p = project_dir(workspace_id, project_id)
-    meta.update({"project_id": project_id, "created_at": now_iso(), "updated_at": now_iso(), "workspace_id": workspace_id})
-    safe_write_json(p / "project.json", meta)
-    memory = {
-        "questions": [], "decisions": [], "assumptions": [], "materials": [], "calculations": [],
-        "risks": [], "reports": [], "lessons_learned": [], "chat_messages": [], "references": [], "artifacts": []
-    }
-    safe_write_json(p / "memory.json", memory)
-    return project_id
-
-
-def load_project(workspace_id: str, project_id: Optional[str]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    if not project_id:
-        return {}, {}
-    p = project_dir(workspace_id, project_id)
-    return safe_read_json(p / "project.json", {}), safe_read_json(p / "memory.json", {})
-
-
-def save_project(workspace_id: str, project_id: str, meta: Dict[str, Any], memory: Dict[str, Any]) -> None:
-    p = project_dir(workspace_id, project_id)
-    meta["updated_at"] = now_iso()
-    safe_write_json(p / "project.json", meta)
-    safe_write_json(p / "memory.json", memory)
-
-
-def add_memory_item(workspace_id: str, project_id: str, category: str, item: Any) -> None:
-    meta, mem = load_project(workspace_id, project_id)
-    mem.setdefault(category, []).append(item)
-    save_project(workspace_id, project_id, meta, mem)
-
-# -----------------------------------------------------------------------------
-# Reference vault and retrieval
-# -----------------------------------------------------------------------------
-
-@dataclass
-class SourceChunk:
-    source_id: str
-    title: str
-    workspace: str
-    path: str
-    source_type: str
-    confidentiality: str
-    revision: str
-    tags: List[str]
-    text: str
-    quality: float = 1.0
-
-
-def chunk_text(text: str, size: int = 850, overlap: int = 120) -> List[str]:
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
+def chunk_text(text: str, max_words: int = 420, overlap: int = 70) -> List[str]:
+    words = re.findall(r"\S+", text or "")
+    if not words:
         return []
-    chunks = []
-    i = 0
-    while i < len(text):
-        chunks.append(text[i:i+size])
-        i += max(1, size - overlap)
-    return chunks
-
-
-def source_quality(source_type: str, confidentiality: str) -> float:
-    base = {
-        "Standards summary": 1.20,
-        "Design guide": 1.15,
-        "Public datasheet": 1.10,
-        "Supplier catalog": 1.00,
-        "Open reference": 0.95,
-        "Own engineering note": 0.90,
-        "Project reference": 0.85,
-        "Personal reference": 0.80,
-        "Team reference": 0.90,
-    }.get(source_type, 0.80)
-    if confidentiality in ["Private", "Confidential"]:
-        base += 0.05
-    return base
-
-
-def register_reference(workspace_id: str, project_id: str, uploaded, meta: Dict[str, str]) -> Dict[str, Any]:
-    p = project_dir(workspace_id, project_id)
-    ref_id = uuid.uuid4().hex[:10]
-    safe_name = slugify(Path(uploaded.name).stem, "reference") + Path(uploaded.name).suffix.lower()
-    raw_path = p / "references" / f"{ref_id}_{safe_name}"
-    raw_path.write_bytes(uploaded.getvalue())
-    text = extract_uploaded_text(uploaded)
-    text_path = p / "references" / f"{ref_id}_extracted.txt"
-    text_path.write_text(text, encoding="utf-8", errors="ignore")
-    rec = {
-        "reference_id": ref_id,
-        "filename": uploaded.name,
-        "stored_path": str(raw_path.relative_to(ROOT)),
-        "text_path": str(text_path.relative_to(ROOT)),
-        "title": meta.get("title") or uploaded.name,
-        "workspace": meta.get("workspace", "General engineering"),
-        "source_type": meta.get("source_type", "Project reference"),
-        "confidentiality": meta.get("confidentiality", "Private"),
-        "revision": meta.get("revision", "unspecified"),
-        "tags": [t.strip() for t in meta.get("tags", "").split(",") if t.strip()],
-        "legal_note": meta.get("legal_note", "User states they have the right to use this reference."),
-        "created_at": now_iso(),
-    }
-    add_memory_item(workspace_id, project_id, "references", rec)
-    return rec
-
-
-def collect_global_sources() -> List[SourceChunk]:
-    sources: List[SourceChunk] = []
-    for folder in GLOBAL_KNOWLEDGE_DIR.iterdir():
-        if not folder.is_dir():
-            continue
-        workspace = next((k for k, v in WORKSPACES.items() if v["folder"] == folder.name), folder.name)
-        for f in folder.glob("*.md"):
-            raw = file_text(f)
-            for i, c in enumerate(chunk_text(raw)):
-                sources.append(SourceChunk(
-                    source_id=f"G-{folder.name}-{f.stem}-{i}",
-                    title=f.stem.replace("_", " ").title(),
-                    workspace=workspace,
-                    path=str(f.relative_to(ROOT)),
-                    source_type="Global knowledge pack",
-                    confidentiality="Public",
-                    revision="global",
-                    tags=[folder.name, f.stem],
-                    text=c,
-                    quality=1.0,
-                ))
-    return sources
-
-
-def collect_project_sources(workspace_id: str, project_id: Optional[str]) -> List[SourceChunk]:
-    if not project_id:
-        return []
-    _, mem = load_project(workspace_id, project_id)
-    sources = []
-    for rec in mem.get("references", []):
-        text_path = ROOT / rec.get("text_path", "")
-        raw = file_text(text_path)
-        for i, c in enumerate(chunk_text(raw)):
-            sources.append(SourceChunk(
-                source_id=f"R-{rec.get('reference_id')}-{i}",
-                title=rec.get("title", "Reference"),
-                workspace=rec.get("workspace", "General engineering"),
-                path=rec.get("stored_path", ""),
-                source_type=rec.get("source_type", "Project reference"),
-                confidentiality=rec.get("confidentiality", "Private"),
-                revision=rec.get("revision", "unspecified"),
-                tags=rec.get("tags", []),
-                text=c,
-                quality=source_quality(rec.get("source_type", "Project reference"), rec.get("confidentiality", "Private")),
-            ))
-    return sources
-
-
-def expand_query(query: str, workspace: str, project_meta: Dict[str, Any]) -> str:
-    tokens = [query]
-    q = query.lower()
-    expansions = {
-        "Manufacturing / DFM": ["wall thickness draft ribs bosses tooling tolerance assembly process capability sink warpage cycle time quality"],
-        "Simulation / FEA": ["loads constraints contacts mesh convergence validation stress displacement failure criteria"],
-        "CFD / Thermal": ["reynolds turbulence y plus boundary conditions pressure drop heat transfer convergence mass balance"],
-        "CAD / SolidWorks": ["macro vba export step dxf drawing bom active document error handling validation"],
-        "Materials Selection": ["strength stiffness toughness density temperature corrosion manufacturability cost availability"],
-        "Product R&D / Design": ["load path material safety factor fatigue tolerance validation failure modes"],
-        "Innovation / Patent": ["novelty prior art claims prototype manufacturability commercial value"],
-    }
-    tokens.extend(expansions.get(workspace, []))
-    for k in ["part_type", "material", "process", "manufacturing_method", "target_use", "project_type"]:
-        v = project_meta.get(k)
-        if v:
-            tokens.append(str(v))
-    if any(w in q for w in ["plastic", "mold", "mould", "abs", "cover", "enclosure"]):
-        tokens.append("injection molding thermoplastics abs enclosure cover sink warpage draft ribs bosses")
-    if any(w in q for w in ["solidworks", "macro", "step", "dxf", "bom"]):
-        tokens.append("solidworks macro vba export step dxf bom drawing")
-    if any(w in q for w in ["ansys", "fea", "bracket", "stress", "modal", "buckling"]):
-        tokens.append("static structural fea mesh convergence loads constraints validation")
-    if any(w in q for w in ["cfd", "flow", "pipe", "reynolds", "thermal", "heat"]):
-        tokens.append("cfd thermal reynolds pressure drop turbulence heat transfer")
-    return " ".join(tokens)
-
-
-def retrieve_sources(query: str, workspace: str, project_meta: Dict[str, Any], workspace_id: str, project_id: Optional[str], k: int = 6) -> List[Tuple[float, SourceChunk]]:
-    query_expanded = expand_query(query, workspace, project_meta)
-    q_tokens = tokenize(query_expanded)
-    q_set = set(q_tokens)
-    candidates = collect_global_sources() + collect_project_sources(workspace_id, project_id)
-    scored: List[Tuple[float, SourceChunk]] = []
-    for s in candidates:
-        t = tokenize(s.title + " " + s.workspace + " " + " ".join(s.tags) + " " + s.text)
-        if not t:
-            continue
-        counter = {w: t.count(w) for w in set(t)}
-        score = sum(counter.get(w, 0) for w in q_set)
-        title_bonus = sum(3 for w in q_set if w in tokenize(s.title))
-        workspace_bonus = 5 if (workspace == s.workspace or workspace == "General engineering") else 0
-        folder = WORKSPACES.get(workspace, {}).get("folder")
-        path_bonus = 2 if folder and folder in s.path else 0
-        meta_bonus = 1.5 * len(q_set.intersection(set(tokenize(" ".join(s.tags)))))
-        final = (score + title_bonus + workspace_bonus + path_bonus + meta_bonus) * s.quality
-        if final > 0:
-            scored.append((final, s))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return scored[:k]
-
-# -----------------------------------------------------------------------------
-# Routing, reasoning, scoring
-# -----------------------------------------------------------------------------
-
-def route_workspace(query: str, selected: str) -> str:
-    q = query.lower()
-    rules = [
-        ("CAD / SolidWorks", ["solidworks", "macro", "vba", "step", "dxf", "bom", "drawing"]),
-        ("Simulation / FEA", ["fea", "ansys", "stress", "modal", "buckling", "mesh", "constraint", "bracket"]),
-        ("CFD / Thermal", ["cfd", "fluent", "flow", "pipe", "reynolds", "pressure drop", "heat", "thermal", "y+"]),
-        ("Manufacturing / DFM", ["dfm", "dfa", "manufacturing", "molding", "moulding", "machining", "sheet metal", "tooling", "assembly", "injection"]),
-        ("Materials Selection", ["material", "abs", "aluminum", "steel", "plastic", "polymer", "corrosion", "temperature"]),
-        ("Innovation / Patent", ["patent", "novel", "invention", "claim", "prior art", "triz"]),
-        ("Product R&D / Design", ["design", "shaft", "beam", "bearing", "gear", "spring", "fatigue", "tolerance"]),
-    ]
-    for ws, keys in rules:
-        if any(k in q for k in keys):
-            return ws
-    return selected
-
-
-def detect_missing_inputs(workspace: str, query: str, meta: Dict[str, Any]) -> List[str]:
-    q = query.lower()
-    checks = {
-        "Manufacturing / DFM": [
-            ("material grade", meta.get("material") or any(x in q for x in ["abs", "pc", "pp", "steel", "aluminum"])),
-            ("nominal wall thickness / critical dimensions", bool(re.search(r"\d+(\.\d+)?\s*(mm|cm|inch|in)\b", q))),
-            ("CAD/STEP/drawing or geometry description", any(x in q for x in ["cad", "step", "drawing", "rib", "boss", "snap", "cover", "enclosure"])),
-            ("annual volume", meta.get("annual_volume") or re.search(r"\d+\s*(pcs|parts|units|year|yr)", q)),
-            ("surface finish / cosmetic requirement", any(x in q for x in ["surface", "texture", "cosmetic", "finish"])),
-        ],
-        "Simulation / FEA": [
-            ("study objective", any(x in q for x in ["static", "modal", "buckling", "fatigue", "thermal"])),
-            ("material properties", meta.get("material") or any(x in q for x in ["steel", "aluminum", "abs", "pa", "material"])),
-            ("loads", any(x in q for x in ["load", "force", "n", "kn", "pressure", "torque"])),
-            ("constraints / supports", any(x in q for x in ["fixed", "support", "constraint", "bolted"])),
-            ("validation target", any(x in q for x in ["validate", "test", "allowable", "limit"])),
-        ],
-        "CFD / Thermal": [
-            ("fluid and properties", any(x in q for x in ["water", "air", "oil", "density", "viscosity"])),
-            ("velocity or flow rate", any(x in q for x in ["m/s", "l/min", "flow", "velocity"])),
-            ("characteristic length / diameter", any(x in q for x in ["diameter", "pipe", "mm", "meter", "length"])),
-            ("boundary conditions", any(x in q for x in ["inlet", "outlet", "wall", "pressure", "temperature"])),
-            ("validation target", any(x in q for x in ["pressure drop", "temperature", "heat", "validate"])),
-        ],
-        "Materials Selection": [
-            ("functional requirements", any(x in q for x in ["strength", "stiff", "impact", "temperature", "chemical", "corrosion"])),
-            ("manufacturing process", meta.get("process") or any(x in q for x in ["molding", "machining", "sheet", "weld", "casting"])),
-            ("cost/availability target", any(x in q for x in ["cost", "cheap", "available", "supplier"])),
-        ],
-        "CAD / SolidWorks": [
-            ("document type: part/assembly/drawing", any(x in q for x in ["part", "assembly", "drawing"])),
-            ("workflow goal", any(x in q for x in ["export", "create", "bom", "dxf", "step", "pdf"])),
-            ("file naming / output path", any(x in q for x in ["folder", "path", "name", "save"])),
-        ],
-    }
-    return [name for name, ok in checks.get(workspace, []) if not ok]
-
-
-def input_maturity(workspace: str, query: str, meta: Dict[str, Any]) -> Tuple[int, str]:
-    missing = detect_missing_inputs(workspace, query, meta)
-    total = max(5, len(missing) + 2)
-    known = max(0, total - len(missing))
-    # Bonus for project metadata
-    bonus_fields = ["part_type", "material", "process", "annual_volume", "target_use"]
-    bonus = sum(1 for f in bonus_fields if meta.get(f))
-    score = min(100, int((known / total) * 70 + bonus * 6))
-    label = "Preliminary only" if score < 45 else "Developing" if score < 70 else "Review-ready" if score < 85 else "Strong input maturity"
-    return score, label
-
-
-def confidence_level(maturity_score: int, retrieved_count: int, calc_count: int) -> str:
-    raw = maturity_score + retrieved_count * 4 + calc_count * 6
-    if raw >= 90:
-        return "High"
-    if raw >= 70:
-        return "Medium-high"
-    if raw >= 50:
-        return "Medium"
-    if raw >= 35:
-        return "Low-to-medium"
-    return "Low"
-
-
-def release_gate(maturity_score: int, high_risks: int, unknowns: int) -> str:
-    if high_risks >= 3 or maturity_score < 35:
-        return "Engineering hold — preliminary only"
-    if unknowns >= 3 or maturity_score < 60:
-        return "Conditional pass — more inputs required before release"
-    if high_risks == 0 and unknowns <= 1 and maturity_score >= 75:
-        return "Review pass — suitable for next engineering gate"
-    return "Conditional pass — verify risks before release"
-
-
-def risk_matrix(workspace: str, query: str, meta: Dict[str, Any]) -> List[Dict[str, str]]:
-    q = query.lower()
-    if workspace == "Manufacturing / DFM":
-        rows = [
-            ("Wall thickness", "High" if not re.search(r"\d+(\.\d+)?\s*mm", q) else "Medium", "No nominal wall thickness was provided."),
-            ("Draft / ejection", "Medium", "Injection molded parts require release angle and ejection planning."),
-            ("Ribs / bosses", "High" if any(x in q for x in ["cover", "enclosure", "boss", "rib"]) else "Medium", "Covers often require stiffness and mounting features; thick bosses create sink risk."),
-            ("Tooling strategy", "Medium", "Gate, parting line and ejector strategy are not defined."),
-            ("Tolerance capability", "Unknown", "CTQ dimensions and tolerance limits are missing."),
-            ("Assembly / DFA", "Unknown", "Mating parts and assembly method are not defined."),
-        ]
-    elif workspace == "Simulation / FEA":
-        rows = [
-            ("Objective", "Medium", "Study type and pass/fail criteria must be explicit."),
-            ("Loads", "Medium" if any(x in q for x in ["load", "force", "kn", "n"]) else "High", "Loads are incomplete or need verification."),
-            ("Constraints", "High" if not any(x in q for x in ["fixed", "support", "constraint"]) else "Medium", "Incorrect constraints can invalidate FEA."),
-            ("Contacts", "Unknown", "Contact/bonding assumptions are not defined."),
-            ("Mesh convergence", "High", "No convergence plan provided."),
-            ("Validation", "High", "No hand calculation or test correlation target provided."),
-        ]
-    elif workspace == "CFD / Thermal":
-        rows = [
-            ("Flow regime", "Medium" if any(x in q for x in ["reynolds", "water", "air", "m/s"]) else "High", "Flow regime drives model selection."),
-            ("Boundary conditions", "High" if not any(x in q for x in ["inlet", "outlet", "wall", "temperature"]) else "Medium", "CFD is highly sensitive to boundary conditions."),
-            ("Turbulence model", "Medium", "Model should be justified by Re, y+ and separation risk."),
-            ("Mesh / y+", "High", "No wall-resolution target or mesh plan provided."),
-            ("Convergence", "Medium", "Residual and balance targets are not specified."),
-            ("Validation", "High", "No analytical or experimental reference defined."),
-        ]
-    elif workspace == "CAD / SolidWorks":
-        rows = [
-            ("Document safety", "High", "Macro must guard against no active document and wrong document type."),
-            ("File overwrite", "High", "Output path and overwrite behavior must be controlled."),
-            ("Error handling", "Medium", "Macro should include explicit error handling and logging."),
-            ("Workflow completeness", "Medium", "Export, drawing/BOM and naming convention must be clarified."),
-        ]
-    elif workspace == "Materials Selection":
-        rows = [
-            ("Functional requirements", "High", "Material cannot be selected from material name alone."),
-            ("Environment", "Medium", "Temperature, chemicals and UV exposure are not fully defined."),
-            ("Manufacturing compatibility", "Medium", "Process compatibility must be checked."),
-            ("Availability / cost", "Unknown", "Supplier and cost targets are missing."),
-        ]
-    else:
-        rows = [
-            ("Requirements clarity", "Medium", "Function, loads and constraints are partially defined."),
-            ("Validation plan", "High", "Verification method is not specified."),
-            ("Manufacturing compatibility", "Medium", "Process constraints are not fully defined."),
-        ]
-    return [{"Area": a, "Risk": r, "Reason": reason} for a, r, reason in rows]
-
-
-def score_from_risks(rows: List[Dict[str, str]], base: int = 100) -> int:
-    penalty = {"High": 14, "Medium": 8, "Low": 3, "Unknown": 10}
-    s = base - sum(penalty.get(r.get("Risk", "Medium"), 6) for r in rows)
-    return max(0, min(100, s))
-
-# -----------------------------------------------------------------------------
-# Engineering calculators
-# -----------------------------------------------------------------------------
-
-def calc_beam_center_load(P: float, L: float, E: float, I: float) -> Dict[str, float]:
-    return {"M_max_Nm": P * L / 4, "deflection_m": P * L**3 / (48 * E * I)}
-
-
-def calc_shaft_torsion(T: float, d: float, L: float, G: float) -> Dict[str, float]:
-    J = math.pi * d**4 / 32
-    tau = 16 * T / (math.pi * d**3)
-    theta = T * L / (J * G)
-    return {"polar_J_m4": J, "tau_Pa": tau, "twist_rad": theta, "twist_deg": theta * 180 / math.pi}
-
-
-def calc_bearing_l10(C: float, P: float, rpm: float, p_exp: float = 3.0) -> Dict[str, float]:
-    L10_mrev = (C / P) ** p_exp
-    L10_h = (1e6 / (60 * rpm)) * L10_mrev
-    return {"L10_million_rev": L10_mrev, "L10_hours": L10_h}
-
-
-def calc_reynolds(rho: float, V: float, D: float, mu: float) -> Dict[str, Any]:
-    Re = rho * V * D / mu
-    regime = "Laminar" if Re < 2300 else "Transitional" if Re < 4000 else "Turbulent"
-    return {"Re": Re, "regime": regime}
-
-
-def calc_pressure_drop(f: float, L: float, D: float, rho: float, V: float, k_minor: float = 0.0) -> Dict[str, float]:
-    dynamic = rho * V**2 / 2
-    dp = (f * L / D + k_minor) * dynamic
-    return {"dynamic_pressure_Pa": dynamic, "deltaP_Pa": dp}
-
-
-def calc_heat_transfer(h: float, A: float, dT: float) -> Dict[str, float]:
-    return {"q_W": h * A * dT}
-
-
-def calc_sheet_metal_bend(angle_deg: float, radius: float, thickness: float, k_factor: float) -> Dict[str, float]:
-    ba = math.radians(angle_deg) * (radius + k_factor * thickness)
-    return {"bend_allowance_mm": ba}
-
-
-def calc_fastener_preload(proof_load_N: float, preload_fraction: float = 0.75) -> Dict[str, float]:
-    return {"recommended_preload_N": proof_load_N * preload_fraction}
-
-
-def calc_spring_rate(G: float, wire_d: float, mean_D: float, active_coils: float) -> Dict[str, float]:
-    k = G * wire_d**4 / (8 * mean_D**3 * active_coils)
-    return {"spring_rate_N_per_m": k}
-
-
-def injection_molding_check(wall_mm: Optional[float], rib_mm: Optional[float], boss_mm: Optional[float]) -> List[Dict[str, str]]:
-    out = []
-    if wall_mm is None:
-        out.append({"Check": "Wall thickness", "Status": "Unknown", "Advice": "Provide nominal wall thickness."})
-    else:
-        status = "Review" if wall_mm < 1.0 or wall_mm > 4.0 else "Preliminary OK"
-        out.append({"Check": "Wall thickness", "Status": status, "Advice": "Keep wall uniform and verify material-specific range."})
-    if rib_mm is not None and wall_mm:
-        ratio = rib_mm / wall_mm
-        out.append({"Check": "Rib thickness ratio", "Status": "High risk" if ratio > 0.7 else "Preliminary OK", "Advice": "Ribs are often kept thinner than wall to reduce sink; validate by material/tooling."})
-    if boss_mm is not None and wall_mm:
-        ratio = boss_mm / wall_mm
-        out.append({"Check": "Boss thickness ratio", "Status": "High risk" if ratio > 1.0 else "Review", "Advice": "Avoid thick bosses; use cored bosses and supporting ribs."})
-    return out
-
-
-def parse_basic_numbers_for_calcs(query: str) -> List[Dict[str, Any]]:
-    q = query.lower()
-    calcs = []
-    # Reynolds: water in 20 mm pipe at 1 m/s
-    m_d = re.search(r"(\d+(?:\.\d+)?)\s*mm", q)
-    m_v = re.search(r"(\d+(?:\.\d+)?)\s*m/s", q)
-    if any(x in q for x in ["reynolds", "pipe", "flow"]) and m_d and m_v:
-        D = float(m_d.group(1)) / 1000
-        V = float(m_v.group(1))
-        rho = 1000.0 if "water" in q else 1.225 if "air" in q else 1000.0
-        mu = 0.001 if "water" in q else 1.81e-5 if "air" in q else 0.001
-        calcs.append({"name": "Reynolds number", "result": calc_reynolds(rho, V, D, mu)})
-    return calcs
-
-# -----------------------------------------------------------------------------
-# CAD and simulation artifacts
-# -----------------------------------------------------------------------------
-
-def generate_solidworks_macro(workflow: str, project_name: str = "MechAI_Project") -> str:
-    workflow_comment = workflow.replace("'", "")[:200]
-    return f'''Option Explicit
-
-' MechAI Pro generated SolidWorks VBA macro skeleton
-' Project: {project_name}
-' Workflow intent: {workflow_comment}
-' Safety: Review paths and backup files before running.
-
-Dim swApp As SldWorks.SldWorks
-Dim swModel As SldWorks.ModelDoc2
-Dim swExt As SldWorks.ModelDocExtension
-Dim errors As Long
-Dim warnings As Long
-
-Sub main()
-    On Error GoTo EH
-    Set swApp = Application.SldWorks
-    Set swModel = swApp.ActiveDoc
-    If swModel Is Nothing Then
-        MsgBox "No active SolidWorks document. Open a part/assembly/drawing first.", vbCritical
-        Exit Sub
-    End If
-    Set swExt = swModel.Extension
-
-    Dim docTitle As String
-    docTitle = swModel.GetTitle
-
-    Dim outFolder As String
-    outFolder = Environ$("USERPROFILE") & "\\Desktop\\MechAI_Exports"
-    If Dir(outFolder, vbDirectory) = "" Then MkDir outFolder
-
-    ' TODO: customize naming convention and workflow here.
-    ' Example STEP export:
-    Dim stepPath As String
-    stepPath = outFolder & "\\" & docTitle & ".step"
-    swExt.SaveAs stepPath, 0, 0, Nothing, errors, warnings
-
-    ' Example drawing/DXF/BOM automation should be added according to document type.
-    MsgBox "MechAI macro completed. Check export folder: " & outFolder, vbInformation
-    Exit Sub
-EH:
-    MsgBox "Macro failed: " & Err.Description, vbCritical
-End Sub
-'''
-
-
-def validate_macro_text(code: str) -> List[Dict[str, str]]:
-    checks = [
-        ("Option Explicit", "Option Explicit" in code),
-        ("Active document guard", "ActiveDoc" in code and "Is Nothing" in code),
-        ("Error handler", "On Error" in code and "EH:" in code),
-        ("Export path", "outFolder" in code or "SaveAs" in code),
-        ("Overwrite awareness", "backup" in code.lower() or "review paths" in code.lower()),
-    ]
-    return [{"Check": c, "Status": "Pass" if ok else "Review"} for c, ok in checks]
-
-
-def generate_apdl(project: str, load_hint: str = "") -> str:
-    return f'''! MechAI Pro ANSYS APDL starter
-! Project: {project}
-/PREP7
-! TODO: Define material properties
-MP,EX,1,2.1e11
-MP,PRXY,1,0.3
-! TODO: Import/define geometry and mesh
-! TODO: Apply boundary conditions and loads: {load_hint}
-/SOLU
-ANTYPE,0
-SOLVE
-/POST1
-! TODO: Review displacement, stress, reactions, convergence evidence
-FINISH
-'''
-
-
-def generate_fluent_journal(project: str) -> str:
-    return f'''; MechAI Pro Fluent journal starter
-; Project: {project}
-; TODO: Read mesh
-; /file/read-mesh mesh.msh
-; TODO: Set models based on Reynolds number and physics
-; /define/models/viscous k-omega-sst yes
-; TODO: Set material, boundary conditions, initialization, convergence monitors
-; /solve/initialize/hyb-initialization
-; /solve/iterate 500
-; TODO: Check mass/energy balance and validation targets
-'''
-
-
-def fea_setup_score(query: str, meta: Dict[str, Any]) -> Tuple[int, List[Dict[str, str]]]:
-    rows = risk_matrix("Simulation / FEA", query, meta)
-    score = score_from_risks(rows)
-    return score, rows
-
-
-def cfd_setup_score(query: str, meta: Dict[str, Any]) -> Tuple[int, List[Dict[str, str]]]:
-    rows = risk_matrix("CFD / Thermal", query, meta)
-    score = score_from_risks(rows)
-    return score, rows
-
-# -----------------------------------------------------------------------------
-# Templates, reports, tests
-# -----------------------------------------------------------------------------
-
-TEMPLATES = {
-    "DFM Review Template": "Create a DFM review for [part]. Process: [process]. Material: [material]. Annual volume: [volume]. Include score, risk matrix, missing inputs and verification plan.",
-    "FEA Setup Review Template": "Create an FEA setup review for [part]. Loads: [loads]. Constraints: [constraints]. Material: [material]. Include mesh, contacts, convergence and validation plan.",
-    "CFD Setup Review Template": "Create a CFD setup review for [flow domain]. Fluid: [fluid]. Velocity/flow rate: [value]. Include Reynolds number, turbulence model, mesh/y+, convergence and validation.",
-    "Material Selection Matrix": "Create a material selection matrix for [part/function]. Requirements: strength, stiffness, temperature, chemicals, process, cost, availability.",
-    "Design Review Checklist": "Create a design review checklist for [product]. Include requirements, loads, materials, manufacturing, tolerances, risks and verification.",
-    "FMEA Template": "Create an FMEA for [system/part]. Include function, failure modes, effects, causes, controls, severity, occurrence, detection and actions.",
-    "DVP&R Template": "Create a DVP&R plan for [product]. Include requirements, test method, acceptance criteria, sample size, owner and status.",
-    "Cost Reduction Template": "Create a cost reduction review for [part/process]. Include material, process, tooling, assembly, inspection, scrap, and ranked cost-down actions.",
-    "SolidWorks Macro Request Template": "Generate a SolidWorks VBA macro for [workflow]. Include validation, safety notes, .bas export and run instructions.",
+    chunks: List[str] = []
+    start = 0
+    while start < len(words):
+        end = min(start + max_words, len(words))
+        chunk = " ".join(words[start:end]).strip()
+        if len(chunk) > 80:
+            chunks.append(chunk)
+        if end >= len(words):
+            break
+        start = max(0, end - overlap)
+    return chunks[:160]
+
+
+def normalize_terms(text: str) -> List[str]:
+    raw = re.findall(r"[A-Za-z0-9\u0600-\u06FF\+\-\.]+", (text or "").lower())
+    stop = set("the a an and or of for to in on at by with from as is are be this that create make generate review setup plan".split())
+    return [t for t in raw if len(t) > 2 and t not in stop]
+
+
+QUERY_EXPANSIONS = {
+    "plastic": ["thermoplastic", "injection", "molding", "abs", "pc", "pp", "wall", "draft", "rib", "boss", "warpage"],
+    "cover": ["enclosure", "shell", "housing", "snap", "boss", "rib", "wall", "assembly"],
+    "injection": ["molding", "draft", "gate", "ejector", "shrinkage", "sink", "warpage", "boss", "rib"],
+    "dfm": ["manufacturing", "tooling", "process", "capability", "tolerance", "assembly", "cycle", "scrap"],
+    "solidworks": ["macro", "vba", "step", "dxf", "drawing", "bom", "export", "assembly"],
+    "fea": ["mesh", "boundary", "constraint", "load", "contacts", "element", "convergence", "validation"],
+    "cfd": ["reynolds", "turbulence", "boundary", "mesh", "y+", "pressure", "heat", "convergence"],
+    "material": ["density", "strength", "stiffness", "toughness", "temperature", "corrosion", "cost"],
 }
 
 
-def build_report_markdown(workspace_id: str, project_id: str, title: str = "Engineering Report") -> str:
-    meta, mem = load_project(workspace_id, project_id)
-    lines = [f"# {title}", "", f"Generated: {now_iso()}", f"App: {APP_TITLE} {APP_VERSION}", ""]
-    lines += ["## Project Profile"]
-    for k, v in meta.items():
-        if k not in ["project_id"] and v:
-            lines.append(f"- **{k.replace('_',' ').title()}**: {v}")
-    for sec in ["assumptions", "risks", "decisions", "materials", "calculations", "lessons_learned", "references"]:
-        lines.append(f"\n## {sec.replace('_',' ').title()}")
-        items = mem.get(sec, [])
-        if not items:
-            lines.append("- None recorded yet.")
+def expanded_query_terms(query: str, project: Optional[Dict[str, Any]] = None) -> List[str]:
+    base = normalize_terms(query)
+    meta = ""
+    if project:
+        meta = " ".join(str(project.get(k) or "") for k in ["name", "project_type", "part_type", "material", "process", "manufacturing_method", "target_use"])
+        base += normalize_terms(meta)
+    expanded = list(base)
+    for term in list(base):
+        expanded += QUERY_EXPANSIONS.get(term, [])
+    return list(dict.fromkeys(expanded))
+
+
+def score_text(query_terms: List[str], text: str, source_quality: float = 0.6, workspace_boost: float = 1.0) -> float:
+    lower = (text or "").lower()
+    score = 0.0
+    for term in query_terms:
+        if term in lower:
+            score += 1.0 + min(2.0, lower.count(term) * 0.1)
+    return score * workspace_boost * (0.5 + source_quality)
+
+
+def source_quality_score(source_type: str, approval_status: str, confidentiality: str, legal_note: str) -> float:
+    score = 0.55
+    if source_type in {"Standards summary", "Design guide", "Public datasheet", "Company standard", "Own engineering note"}:
+        score += 0.15
+    if approval_status == "Approved":
+        score += 0.20
+    elif approval_status == "Under review":
+        score += 0.08
+    elif approval_status == "Deprecated":
+        score -= 0.25
+    if legal_note and len(legal_note.strip()) > 15:
+        score += 0.05
+    if confidentiality in {"Private", "Confidential"}:
+        score += 0.03  # not higher truth, but often project-specific
+    return round(max(0.05, min(1.0, score)), 2)
+
+
+def route_workspace(prompt: str, selected: str) -> str:
+    p = prompt.lower()
+    if any(x in p for x in ["solidworks", "macro", "vba", "step", "dxf", "bom", "drawing"]):
+        return "CAD / SolidWorks"
+    if any(x in p for x in ["fea", "ansys", "static structural", "modal", "buckling", "mesh", "element"]):
+        return "Simulation / FEA"
+    if any(x in p for x in ["cfd", "fluent", "reynolds", "turbulence", "y+", "pressure drop", "flow", "thermal"]):
+        return "CFD / Thermal"
+    if any(x in p for x in ["dfm", "dfa", "manufacturing", "injection", "molding", "machining", "sheet metal", "assembly", "tolerance"]):
+        return "Manufacturing / DFM"
+    if any(x in p for x in ["material", "abs", "pc", "pp", "steel", "aluminum", "elastomer", "corrosion"]):
+        return "Materials Selection"
+    if any(x in p for x in ["patent", "claim", "prior art", "invention", "novelty"]):
+        return "Innovation / Patent"
+    if selected != "General engineering":
+        return selected
+    return "Product R&D / Design"
+
+# -----------------------------------------------------------------------------
+# Supabase backend
+# -----------------------------------------------------------------------------
+
+@dataclass
+class BackendStatus:
+    configured: bool
+    url_present: bool
+    anon_present: bool
+    service_present: bool
+    bucket: str
+    message: str
+
+
+class SupabaseBackend:
+    def __init__(self):
+        self.url = get_secret("SUPABASE_URL")
+        self.anon = get_secret("SUPABASE_ANON_KEY") or get_secret("SUPABASE_PUBLISHABLE_KEY")
+        self.service = get_secret("SUPABASE_SERVICE_ROLE_KEY") or get_secret("SUPABASE_SECRET_KEY")
+        self.bucket = get_secret("SUPABASE_BUCKET_REFERENCES", "mechai-references")
+        self.auth_client: Optional[Client] = None
+        self.db: Optional[Client] = None
+        if create_client and self.url and self.anon:
+            try:
+                self.auth_client = create_client(self.url, self.anon)
+                self.db = create_client(self.url, self.service or self.anon)
+            except Exception as exc:
+                st.sidebar.error(f"Supabase client error: {exc}")
+
+    def status(self) -> BackendStatus:
+        configured = bool(self.auth_client and self.db and self.url and self.anon)
+        return BackendStatus(
+            configured=configured,
+            url_present=bool(self.url),
+            anon_present=bool(self.anon),
+            service_present=bool(self.service),
+            bucket=self.bucket,
+            message="Connected" if configured else "Not configured",
+        )
+
+    def sign_in(self, email: str, password: str) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+        if not self.auth_client:
+            return False, "Supabase Auth is not configured.", None
+        try:
+            res = self.auth_client.auth.sign_in_with_password({"email": email, "password": password})
+            user = getattr(res, "user", None)
+            session = getattr(res, "session", None)
+            if not user:
+                return False, "Sign-in failed.", None
+            return True, "Signed in.", {"id": user.id, "email": user.email, "session": session}
+        except Exception as exc:
+            return False, f"Sign-in error: {exc}", None
+
+    def sign_up(self, email: str, password: str) -> Tuple[bool, str]:
+        if not self.auth_client:
+            return False, "Supabase Auth is not configured."
+        try:
+            clean_email = email.strip()
+            clean_password = password.strip()
+            payload = {
+                "email": clean_email,
+                "password": clean_password,
+                "options": {"email_redirect_to": "http://localhost:8501"},
+            }
+            res = self.auth_client.auth.sign_up(payload)
+            user = getattr(res, "user", None)
+            if user:
+                return True, "Account created. Please sign in. If email confirmation is enabled, confirm your email first."
+            return True, "Account request sent. Check Supabase email confirmation settings, then sign in."
+        except Exception as exc:
+            msg = str(exc)
+            if "rate limit" in msg.lower():
+                return False, "Supabase signup rate limit exceeded. Use Sign in if the account already exists, or wait a few minutes before creating another account."
+            return False, f"Sign-up error: {msg}"
+
+    def table(self, name: str):
+        if not self.db:
+            raise RuntimeError("Supabase database is not configured")
+        return self.db.table(name)
+
+    def safe_execute(self, query, default: Any = None) -> Any:
+        try:
+            res = query.execute()
+            return getattr(res, "data", default)
+        except Exception as exc:
+            st.warning(f"Database operation failed: {exc}")
+            return default
+
+    # ---- Workspaces and members ----
+    def create_workspace(self, name: str, workspace_type: str, user: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        payload = {
+            "name": name.strip(),
+            "workspace_type": workspace_type,
+            "owner_user_id": user["id"],
+            "created_at": now_iso(),
+        }
+        try:
+            res = self.table("mechai_workspaces").insert(payload).execute()
+            row = res.data[0]
+            self.table("mechai_workspace_members").insert({
+                "workspace_id": row["id"], "user_id": user["id"], "email": user["email"], "role": "Owner", "created_at": now_iso()
+            }).execute()
+            return row
+        except Exception as exc:
+            st.error(f"Create workspace failed: {exc}")
+            return None
+
+    def list_workspaces_for_user(self, user: Dict[str, Any]) -> List[Dict[str, Any]]:
+        if not self.db or not user:
+            return []
+        rows_by_owner: List[Dict[str, Any]] = []
+        rows_by_member: List[Dict[str, Any]] = []
+        try:
+            rows_by_owner = self.table("mechai_workspaces").select("*").eq("owner_user_id", user["id"]).execute().data or []
+        except Exception:
+            rows_by_owner = []
+        try:
+            mems = self.table("mechai_workspace_members").select("workspace_id,role,email,user_id").eq("email", user["email"]).execute().data or []
+            ids = [m["workspace_id"] for m in mems]
+            if ids:
+                rows_by_member = self.table("mechai_workspaces").select("*").in_("id", ids).execute().data or []
+        except Exception:
+            rows_by_member = []
+        merged = {r["id"]: r for r in rows_by_owner + rows_by_member}
+        return list(merged.values())
+
+    def get_role(self, workspace_id: str, user: Dict[str, Any]) -> str:
+        try:
+            if user and workspace_id:
+                rows = self.table("mechai_workspace_members").select("role").eq("workspace_id", workspace_id).eq("email", user["email"]).limit(1).execute().data or []
+                if rows:
+                    return rows[0].get("role") or "Viewer"
+        except Exception:
+            pass
+        return "Viewer"
+
+    def add_member(self, workspace_id: str, email: str, role: str) -> Tuple[bool, str]:
+        try:
+            self.table("mechai_workspace_members").insert({
+                "workspace_id": workspace_id, "email": email.strip().lower(), "role": role, "created_at": now_iso()
+            }).execute()
+            return True, "Member added. They will see the workspace after signing in with that email."
+        except Exception as exc:
+            return False, f"Add member failed: {exc}"
+
+    def list_members(self, workspace_id: str) -> List[Dict[str, Any]]:
+        try:
+            return self.table("mechai_workspace_members").select("*").eq("workspace_id", workspace_id).execute().data or []
+        except Exception:
+            return []
+
+    # ---- Projects ----
+    def list_projects(self, workspace_id: str) -> List[Dict[str, Any]]:
+        try:
+            return self.table("mechai_projects").select("*").eq("workspace_id", workspace_id).order("created_at", desc=True).execute().data or []
+        except Exception:
+            return []
+
+    def create_project(self, workspace_id: str, user: Dict[str, Any], payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        row = dict(payload)
+        row.update({
+            "workspace_id": workspace_id,
+            "owner_user_id": user["id"],
+            "created_at": now_iso(),
+            "updated_at": now_iso(),
+        })
+        try:
+            res = self.table("mechai_projects").insert(row).execute()
+            return res.data[0]
+        except Exception as exc:
+            st.error(f"Create project failed: {exc}")
+            return None
+
+    def update_project(self, project_id: str, payload: Dict[str, Any]) -> bool:
+        payload = dict(payload)
+        payload["updated_at"] = now_iso()
+        try:
+            self.table("mechai_projects").update(payload).eq("id", project_id).execute()
+            return True
+        except Exception as exc:
+            st.error(f"Update project failed: {exc}")
+            return False
+
+    # ---- References ----
+    def find_duplicate(self, workspace_id: str, file_hash: str) -> Optional[Dict[str, Any]]:
+        try:
+            rows = self.table("mechai_references").select("*").eq("workspace_id", workspace_id).eq("file_hash", file_hash).limit(1).execute().data or []
+            return rows[0] if rows else None
+        except Exception:
+            return None
+
+    def upload_reference_file(self, storage_path: str, data: bytes, content_type: str) -> Tuple[bool, str]:
+        if not self.db:
+            return False, "Supabase is not configured."
+        try:
+            self.db.storage.from_(self.bucket).upload(
+                storage_path,
+                data,
+                file_options={"content-type": content_type, "x-upsert": "true"},
+            )
+            return True, storage_path
+        except Exception as exc:
+            # Try update if upload complains that file exists.
+            try:
+                self.db.storage.from_(self.bucket).update(storage_path, data, file_options={"content-type": content_type})
+                return True, storage_path
+            except Exception:
+                return False, f"Storage upload failed: {exc}"
+
+    def insert_reference(self, ref: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        try:
+            res = self.table("mechai_references").insert(ref).execute()
+            return res.data[0]
+        except Exception as exc:
+            st.error(f"Reference metadata insert failed: {exc}")
+            return None
+
+    def insert_chunks(self, chunks: List[Dict[str, Any]]) -> bool:
+        if not chunks:
+            return True
+        try:
+            self.table("mechai_reference_chunks").insert(chunks).execute()
+            return True
+        except Exception as exc:
+            st.error(f"Chunk insert failed: {exc}")
+            return False
+
+    def list_references(self, workspace_id: str, project_id: Optional[str] = None, search: str = "") -> List[Dict[str, Any]]:
+        try:
+            q = self.table("mechai_references").select("*").eq("workspace_id", workspace_id).order("created_at", desc=True)
+            if project_id:
+                # include project-specific and workspace/global refs
+                rows = q.execute().data or []
+                rows = [r for r in rows if not r.get("project_id") or r.get("project_id") == project_id]
+            else:
+                rows = q.execute().data or []
+            if search.strip():
+                terms = normalize_terms(search)
+                rows = [r for r in rows if any(t in json.dumps(r, ensure_ascii=False).lower() for t in terms)]
+            return rows
+        except Exception:
+            return []
+
+    def search_reference_chunks(self, workspace_id: str, project_id: Optional[str], query: str, project: Optional[Dict[str, Any]], top_k: int = 7) -> List[Dict[str, Any]]:
+        try:
+            rows = self.table("mechai_reference_chunks").select("*, mechai_references(title,source_type,confidentiality,approval_status,revision,tags,file_name,source_quality)").eq("workspace_id", workspace_id).limit(2000).execute().data or []
+        except Exception:
+            return []
+        if project_id:
+            rows = [r for r in rows if not r.get("project_id") or r.get("project_id") == project_id]
+        terms = expanded_query_terms(query, project)
+        scored: List[Dict[str, Any]] = []
+        for r in rows:
+            ref_meta = r.get("mechai_references") or {}
+            quality = float(ref_meta.get("source_quality") or r.get("source_quality") or 0.6)
+            score = score_text(terms, r.get("chunk_text") or "", quality, 1.1)
+            # Workspace and project-specific boosts
+            if r.get("project_id") == project_id:
+                score *= 1.35
+            if score > 0:
+                item = dict(r)
+                item["score"] = round(score, 3)
+                item["source_title"] = ref_meta.get("title") or "Uploaded reference"
+                item["source_file"] = ref_meta.get("file_name") or "reference"
+                item["source_type"] = ref_meta.get("source_type") or "Reference"
+                item["approval_status"] = ref_meta.get("approval_status") or "Draft"
+                item["source_quality"] = quality
+                scored.append(item)
+        scored.sort(key=lambda x: x.get("score", 0), reverse=True)
+        return scored[:top_k]
+
+    # ---- Memory ----
+    def add_memory(self, workspace_id: str, project_id: str, user: Dict[str, Any], memory_type: str, title: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+        try:
+            self.table("mechai_project_memory").insert({
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "user_id": user.get("id") if user else None,
+                "memory_type": memory_type,
+                "title": title[:200],
+                "content": content[:10000],
+                "metadata": metadata or {},
+                "created_at": now_iso(),
+            }).execute()
+        except Exception:
+            pass
+
+    def list_memory(self, workspace_id: str, project_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+        try:
+            return self.table("mechai_project_memory").select("*").eq("workspace_id", workspace_id).eq("project_id", project_id).order("created_at", desc=True).limit(limit).execute().data or []
+        except Exception:
+            return []
+
+
+backend = SupabaseBackend()
+
+# -----------------------------------------------------------------------------
+# Global knowledge retrieval
+# -----------------------------------------------------------------------------
+
+def seed_minimum_global_knowledge() -> None:
+    seed = {
+        "manufacturing_dfm/injection_molding_expert.md": """# Injection Molding Expert Pack\nScope: plastic part DFM, wall thickness, draft, ribs, bosses, gate, ejection, sink, warpage, tolerance and quality.\nRequired inputs: material grade, nominal wall, part size, ribs, bosses, surface class, annual volume, tolerance targets.\nRules: use uniform wall thickness; add draft; avoid thick bosses; ribs should support stiffness without sink; gate/parting/ejection must be considered before tooling; validate with mold-flow or first article for critical parts.\n""",
+        "manufacturing_dfm/tolerance_capability_expert.md": """# Tolerance Capability Pack\nScope: CTQ dimensions, process capability, inspection and supplier feasibility.\nRules: tight tolerances must be justified by function; process capability must be matched to tolerance; unknown CTQ lowers confidence.\n""",
+        "materials_selection/thermoplastics.md": """# Thermoplastics Pack\nScope: ABS, PC, PP, PA, POM and plastic material selection.\nRules: choose by stiffness, toughness, temperature, chemical exposure, appearance, process compatibility, cost, shrinkage and availability.\n""",
+        "simulation_fea/static_structural.md": """# Static Structural FEA Pack\nScope: loads, constraints, contacts, material, mesh convergence, validation and failure criteria.\nRules: define objective, load path and constraints before meshing; validate with hand calculations or test data.\n""",
+        "cfd_thermal/reynolds_number.md": """# Reynolds Number Pack\nEquation: Re = rho*V*D/mu. Laminar pipe flow usually below about 2300, transitional around 2300-4000, turbulent above about 4000. Validate assumptions and properties.\n""",
+        "cad_solidworks/macro_generation.md": """# SolidWorks Macro Generation Pack\nRules: create safe VBA macros with error handling, clear object model steps, file path warnings and no destructive actions without confirmation.\n""",
+    }
+    for rel, content in seed.items():
+        p = GLOBAL_KNOWLEDGE_DIR / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if not p.exists():
+            p.write_text(content, encoding="utf-8")
+
+
+def load_global_knowledge_docs() -> List[Dict[str, Any]]:
+    seed_minimum_global_knowledge()
+    docs: List[Dict[str, Any]] = []
+    for path in sorted(GLOBAL_KNOWLEDGE_DIR.rglob("*.md")):
+        try:
+            rel = path.relative_to(GLOBAL_KNOWLEDGE_DIR).as_posix()
+            workspace_folder = rel.split("/")[0] if "/" in rel else "general"
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for idx, chunk in enumerate(chunk_text(text, max_words=360, overlap=50)):
+                docs.append({
+                    "kind": "global",
+                    "workspace_folder": workspace_folder,
+                    "source_path": rel,
+                    "chunk_index": idx,
+                    "text": chunk,
+                    "source_quality": 0.72,
+                    "title": Path(rel).name,
+                })
+        except Exception:
+            continue
+    return docs
+
+
+def search_global_knowledge(query: str, workspace: str, project: Optional[Dict[str, Any]], top_k: int = 8) -> List[Dict[str, Any]]:
+    terms = expanded_query_terms(query, project)
+    folder = WORKSPACES.get(workspace, {}).get("folder")
+    docs = load_global_knowledge_docs()
+    scored: List[Dict[str, Any]] = []
+    for d in docs:
+        boost = 1.0
+        if folder and d.get("workspace_folder") == folder:
+            boost = 1.45
+        elif workspace == "General engineering":
+            boost = 1.0
+        score = score_text(terms, d["text"], float(d.get("source_quality", 0.7)), boost)
+        if score > 0:
+            item = dict(d)
+            item["score"] = round(score, 3)
+            scored.append(item)
+    scored.sort(key=lambda x: x.get("score", 0), reverse=True)
+    return scored[:top_k]
+
+
+
+# -----------------------------------------------------------------------------
+# v31-v36 Mechanical Intelligence Layer
+# -----------------------------------------------------------------------------
+
+GRAPH_LIBRARY = {
+    "cover/enclosure": {
+        "category": "part",
+        "aliases": ["cover", "enclosure", "lid", "housing", "case", "shell"],
+        "links": ["injection molding", "sheet metal", "ABS", "PC", "PP", "wall thickness", "draft", "ribs", "bosses", "sink marks", "warpage", "snap-fit", "cosmetic surface", "first article inspection"],
+        "risks": ["sink marks", "warpage", "boss cracking", "snap-fit tolerance", "cosmetic defects", "assembly interference"],
+        "validation": ["CAD section review", "tooling review", "first article inspection", "process capability", "fit/assembly test"],
+    },
+    "bracket": {
+        "category": "part",
+        "aliases": ["bracket", "mount", "support", "hanger"],
+        "links": ["static structural", "bending", "stress concentration", "fillet", "bolt preload", "fatigue", "mesh convergence", "yield", "deflection"],
+        "risks": ["yielding", "fatigue cracking", "bolt hole stress", "buckling", "excessive deflection"],
+        "validation": ["hand calculation", "FEA mesh convergence", "load test", "torque/preload verification"],
+    },
+    "shaft": {
+        "category": "part",
+        "aliases": ["shaft", "spindle", "axle"],
+        "links": ["torsion", "bending", "fatigue", "keyway", "bearing seat", "critical speed", "surface finish", "heat treatment"],
+        "risks": ["torsional failure", "fatigue", "deflection", "bearing misalignment", "keyway stress concentration"],
+        "validation": ["torsional stress", "fatigue factor of safety", "deflection check", "bearing life", "runout inspection"],
+    },
+    "pipe/duct": {
+        "category": "part",
+        "aliases": ["pipe", "duct", "channel", "manifold", "hose"],
+        "links": ["Reynolds number", "pressure drop", "internal flow", "turbulence", "heat transfer", "roughness", "minor losses"],
+        "risks": ["pressure drop too high", "noise", "erosion", "thermal loss", "flow separation"],
+        "validation": ["Reynolds calculation", "pressure-drop estimate", "flow test", "mass balance"],
+    },
+    "injection molding": {
+        "category": "process",
+        "aliases": ["injection", "mold", "mould", "plastic molding", "injection molded"],
+        "links": ["wall thickness", "draft", "ribs", "bosses", "gate", "ejector", "parting line", "shrinkage", "sink marks", "warpage", "cycle time", "tooling"],
+        "risks": ["sink marks", "warpage", "short shot", "flash", "weld lines", "ejection marks", "tooling complexity"],
+        "validation": ["DFM review", "mold-flow review", "tooling review", "FAI", "Cp/Cpk"],
+    },
+    "sheet metal": {
+        "category": "process",
+        "aliases": ["sheet metal", "bend", "laser cut", "press brake", "flat pattern"],
+        "links": ["bend allowance", "k-factor", "minimum flange", "relief", "grain direction", "springback", "DXF"],
+        "risks": ["cracking", "springback", "wrong flat pattern", "tool collision", "burrs"],
+        "validation": ["bend allowance check", "flat pattern review", "first-off bend inspection"],
+    },
+    "machining": {
+        "category": "process",
+        "aliases": ["machining", "milling", "turning", "cnc", "drilling"],
+        "links": ["tool access", "tolerance", "surface finish", "workholding", "cycle time", "tool wear"],
+        "risks": ["tool chatter", "difficult fixturing", "over-tight tolerance", "burrs", "distortion"],
+        "validation": ["process plan", "fixture review", "first article inspection", "capability study"],
+    },
+    "ABS": {
+        "category": "material",
+        "aliases": ["abs", "acrylonitrile butadiene styrene"],
+        "links": ["injection molding", "impact resistance", "cosmetic surface", "creep", "heat deflection", "UV aging"],
+        "risks": ["thermal softening", "UV degradation", "chemical attack", "creep"],
+        "validation": ["datasheet review", "temperature test", "impact test", "aging/UV check"],
+    },
+    "aluminum": {
+        "category": "material",
+        "aliases": ["aluminum", "aluminium", "6061", "6082", "7075"],
+        "links": ["machining", "extrusion", "corrosion", "anodizing", "fatigue", "yield"],
+        "risks": ["galvanic corrosion", "fatigue", "thread stripping", "distortion"],
+        "validation": ["material certificate", "surface treatment review", "fatigue check"],
+    },
+    "steel": {
+        "category": "material",
+        "aliases": ["steel", "mild steel", "stainless", "carbon steel"],
+        "links": ["welding", "machining", "fatigue", "corrosion", "heat treatment"],
+        "risks": ["corrosion", "weld distortion", "fatigue", "brittle fracture"],
+        "validation": ["material certificate", "coating review", "weld inspection", "fatigue check"],
+    },
+}
+
+AGENT_BOARD = {
+    "Design Engineer": "function, load path, geometry, interfaces, tolerances and failure modes",
+    "Manufacturing Engineer": "process capability, tooling, cycle time, scrap and repeatable production",
+    "Materials Engineer": "material grade, environment, strength, stiffness, creep, corrosion and availability",
+    "Quality Engineer": "CTQs, inspection strategy, capability, FAI, acceptance criteria and release evidence",
+    "Simulation Engineer": "physics, boundary conditions, validation, mesh/convergence and interpretation limits",
+    "Cost Engineer": "cost drivers, part count, material utilization, cycle time, tooling and supplier risk",
+    "Patent / Innovation Reviewer": "novelty framing, claimable features, prior-art risk and prototype evidence",
+}
+
+RELEASE_CRITERIA = {
+    "Pass": "Inputs and evidence are mature enough for the next formal engineering stage.",
+    "Conditional Pass": "Proceed only after closing high-priority missing inputs and verification actions.",
+    "Engineering Hold": "Do not release; key engineering assumptions or evidence are missing.",
+    "Stop / Redesign": "Fundamental design/process risk appears incompatible with the stated objective.",
+}
+
+
+def graph_match_entities(prompt: str, project: Optional[Dict[str, Any]] = None) -> List[str]:
+    blob = " ".join([prompt or "", json.dumps(project or {}, ensure_ascii=False)]).lower()
+    found: List[str] = []
+    for node, data in GRAPH_LIBRARY.items():
+        aliases = [node] + list(data.get("aliases", []))
+        if any(str(a).lower() in blob for a in aliases):
+            found.append(node)
+    return found
+
+
+def graph_context(prompt: str, project: Optional[Dict[str, Any]], workspace: str) -> Dict[str, Any]:
+    entities = graph_match_entities(prompt, project)
+    if not entities:
+        # workspace-biased defaults keep the graph useful even with vague questions.
+        if workspace == "Manufacturing / DFM":
+            entities = ["injection molding"] if "mold" in prompt.lower() or "plastic" in prompt.lower() else ["machining"]
+        elif workspace == "Simulation / FEA":
+            entities = ["bracket"]
+        elif workspace == "CFD / Thermal":
+            entities = ["pipe/duct"]
+        elif workspace == "CAD / SolidWorks":
+            entities = ["cover/enclosure"]
+    links: List[str] = []
+    risks: List[str] = []
+    validation: List[str] = []
+    categories: Dict[str, List[str]] = {}
+    for e in entities:
+        d = GRAPH_LIBRARY.get(e, {})
+        categories.setdefault(d.get("category", "concept"), []).append(e)
+        links.extend(d.get("links", []))
+        risks.extend(d.get("risks", []))
+        validation.extend(d.get("validation", []))
+    def unique(seq: Iterable[str]) -> List[str]:
+        return list(dict.fromkeys([str(x) for x in seq if str(x).strip()]))
+    return {
+        "entities": unique(entities),
+        "categories": categories,
+        "linked_concepts": unique(links)[:16],
+        "failure_modes": unique(risks)[:12],
+        "validation_methods": unique(validation)[:12],
+    }
+
+
+def source_family_bias_from_graph(gctx: Dict[str, Any]) -> List[str]:
+    concepts = " ".join(gctx.get("linked_concepts", []) + gctx.get("failure_modes", [])).lower()
+    wanted: List[str] = []
+    if any(x in concepts for x in ["wall", "draft", "shrink", "sink", "warpage", "tooling"]):
+        wanted.extend(["injection_molding", "manufacturing_dfm", "thermoplastics", "tolerance"])
+    if any(x in concepts for x in ["mesh", "boundary", "convergence", "stress", "yield"]):
+        wanted.extend(["static_structural", "mesh_convergence", "validation", "simulation_fea"])
+    if any(x in concepts for x in ["reynolds", "pressure", "turbulence", "heat"]):
+        wanted.extend(["internal_flow", "reynolds", "pressure_drop", "heat_transfer", "cfd_thermal"])
+    if any(x in concepts for x in ["macro", "drawing", "bom", "dxf", "step"]):
+        wanted.extend(["macro", "solidworks", "cad_solidworks", "export"])
+    return list(dict.fromkeys(wanted))
+
+
+def board_review(prompt: str, workspace: str, project: Optional[Dict[str, Any]], missing: List[str], risks: List[Tuple[str, str, str]], gctx: Dict[str, Any]) -> List[Dict[str, str]]:
+    missing_blob = ", ".join(missing) if missing else "none critical detected"
+    high_risks = [r[0] for r in risks if r[1] == "High"]
+    board: List[Dict[str, str]] = []
+    for agent, focus in AGENT_BOARD.items():
+        if workspace == "Manufacturing / DFM" and agent == "Simulation Engineer":
+            stance = "Advisory"
+        elif high_risks and agent in {"Quality Engineer", "Manufacturing Engineer"}:
+            stance = "Concern"
+        elif missing and agent in {"Design Engineer", "Materials Engineer"}:
+            stance = "Needs input"
         else:
-            for item in items[-20:]:
-                if isinstance(item, dict):
-                    lines.append("- " + "; ".join(f"{k}: {v}" for k, v in item.items() if k not in ["text"] and v))
-                else:
-                    lines.append(f"- {item}")
-    lines.append("\n## Conversation Excerpts")
-    for m in mem.get("chat_messages", [])[-10:]:
-        lines.append(f"### {m.get('role','message').title()} — {m.get('created_at','')}")
-        lines.append(str(m.get("content", ""))[:2000])
+            stance = "Preliminary pass"
+        if agent == "Design Engineer":
+            note = f"Confirm function, interfaces and geometry before release. Missing input focus: {missing_blob}."
+        elif agent == "Manufacturing Engineer":
+            note = f"Process capability and tooling constraints dominate. Key graph risks: {', '.join(gctx.get('failure_modes', [])[:5]) or 'not enough evidence'}."
+        elif agent == "Materials Engineer":
+            note = "Material grade and environment must be explicit before final selection, simulation or process release."
+        elif agent == "Quality Engineer":
+            note = "Define CTQ dimensions, inspection method, acceptance criteria and evidence records before any release gate."
+        elif agent == "Simulation Engineer":
+            note = "Use simulation as evidence only with validated loads, constraints, material properties and convergence checks."
+        elif agent == "Cost Engineer":
+            note = "Rank changes by risk reduction, tooling impact, cycle time, material use and implementation effort."
+        else:
+            note = "If the concept is novel, separate technical novelty from manufacturability and commercial value."
+        board.append({"agent": agent, "focus": focus, "stance": stance, "note": note})
+    return board
+
+
+def release_gate_decision(score: int, missing: List[str], risks: List[Tuple[str, str, str]], evidence_level: str) -> str:
+    high = sum(1 for _, level, _ in risks if level == "High")
+    unknown = sum(1 for _, level, _ in risks if level == "Unknown")
+    if score < 45 or high >= 3:
+        return "Engineering Hold"
+    if score < 70 or missing or unknown:
+        return "Conditional Pass"
+    if "Level 4" in evidence_level and score >= 80:
+        return "Pass"
+    return "Conditional Pass"
+
+
+def evidence_score(ref_sources: List[Dict[str, Any]], global_sources: List[Dict[str, Any]], calc_notes: List[str]) -> Tuple[str, int]:
+    pts = 0
+    if global_sources:
+        pts += 20
+    if ref_sources:
+        pts += 35
+    if calc_notes:
+        pts += 25
+    if len(global_sources) + len(ref_sources) >= 5:
+        pts += 10
+    pts = min(100, pts)
+    if pts >= 75:
+        level = "Level 4 — internally sourced + reference-backed + deterministic checks"
+    elif pts >= 50:
+        level = "Level 3 — internal knowledge with retrieved sources"
+    elif pts >= 20:
+        level = "Level 2 — internal qualitative engineering guidance"
+    else:
+        level = "Level 1 — preliminary frame only"
+    return level, pts
+
+
+def deterministic_checks_v36(text: str, project: Optional[Dict[str, Any]] = None) -> List[str]:
+    notes: List[str] = []
+    rn = calculate_reynolds_if_possible(text)
+    if rn:
+        notes.append(rn)
+    p = text.lower()
+    # Beam center point load rough parser: 2 kN, 500 mm, E/I if provided.
+    if "beam" in p and any(x in p for x in ["load", "span", "deflection"]):
+        notes.append("Beam validator available: provide P, span L, modulus E and second moment I to calculate δ = PL³/(48EI) and bending stress checks.")
+    if "shaft" in p or "torque" in p:
+        notes.append("Shaft validator available: provide torque, shaft diameter, material allowable shear, keyway details and bearing span to check torsion, fatigue and deflection.")
+    if "bearing" in p:
+        notes.append("Bearing validator available: provide dynamic rating C, equivalent load P, bearing type and speed to estimate L10 life.")
+    if "wall" in p or "injection" in p or "mold" in p:
+        notes.append("Injection molding validator: compare rib/boss thickness to nominal wall, check draft, gate/ejector feasibility, shrinkage and sink/warpage risks.")
+    if "sheet" in p or "bend" in p:
+        notes.append("Sheet-metal validator: provide bend angle, inside radius, thickness and K-factor to calculate bend allowance and flat pattern risk.")
+    return list(dict.fromkeys(notes))[:8]
+
+
+def knowledge_graph_markdown(gctx: Dict[str, Any]) -> str:
+    lines = ["#### Mechanical Knowledge Graph context"]
+    if gctx.get("entities"):
+        lines.append("**Detected nodes:** " + ", ".join(gctx["entities"]))
+    if gctx.get("linked_concepts"):
+        lines.append("**Connected engineering concepts:** " + ", ".join(gctx["linked_concepts"][:12]))
+    if gctx.get("failure_modes"):
+        lines.append("**Failure/risk modes:** " + ", ".join(gctx["failure_modes"][:10]))
+    if gctx.get("validation_methods"):
+        lines.append("**Validation methods:** " + ", ".join(gctx["validation_methods"][:10]))
+    return "\n\n".join(lines)
+
+
+# -----------------------------------------------------------------------------
+# Engineering reasoning and calculators
+# -----------------------------------------------------------------------------
+
+def detect_missing_inputs(prompt: str, project: Optional[Dict[str, Any]], workspace: str) -> List[str]:
+    p = prompt.lower()
+    missing: List[str] = []
+    project = project or {}
+    def has_field(k: str) -> bool:
+        return bool(str(project.get(k) or "").strip())
+    if workspace == "Manufacturing / DFM":
+        for label, key in [("material grade", "material"), ("manufacturing process", "process"), ("annual volume", "annual_volume")]:
+            if not has_field(key):
+                missing.append(label)
+        for item in ["nominal wall thickness", "CAD/STEP or drawing", "CTQ dimensions", "surface finish class"]:
+            if item.lower() not in p:
+                missing.append(item)
+    elif workspace == "Simulation / FEA":
+        for item in ["material properties", "load magnitude and direction", "constraints", "contacts", "mesh convergence criterion", "failure criterion"]:
+            if item.split()[0].lower() not in p:
+                missing.append(item)
+    elif workspace == "CFD / Thermal":
+        for item in ["fluid properties", "domain geometry", "inlet/outlet boundary conditions", "temperature/heat load", "mesh/y+ target", "validation method"]:
+            if item.split()[0].lower() not in p:
+                missing.append(item)
+    elif workspace == "Materials Selection":
+        for item in ["functional requirements", "temperature range", "chemical exposure", "manufacturing process", "cost target", "availability"]:
+            if item.split()[0].lower() not in p:
+                missing.append(item)
+    elif workspace == "CAD / SolidWorks":
+        for item in ["SolidWorks version", "file path strategy", "target document type", "export format", "overwrite policy"]:
+            if item.split()[0].lower() not in p:
+                missing.append(item)
+    return list(dict.fromkeys(missing))[:10]
+
+
+def maturity_score(missing: List[str]) -> Tuple[int, str]:
+    score = max(15, 100 - len(missing) * 10)
+    if score >= 80:
+        label = "High — enough input for a stronger engineering recommendation"
+    elif score >= 55:
+        label = "Medium — useful preliminary review, but not release-ready"
+    else:
+        label = "Low — preliminary only; major assumptions remain"
+    return score, label
+
+
+def risk_matrix(prompt: str, workspace: str, missing: List[str]) -> List[Tuple[str, str, str]]:
+    p = prompt.lower()
+    rows: List[Tuple[str, str, str]] = []
+    if workspace == "Manufacturing / DFM":
+        rows = [
+            ("Wall thickness", "High" if any("wall" in m for m in missing) else "Medium", "Unknown or non-uniform wall thickness drives sink, warpage and cycle-time risk."),
+            ("Draft / ejection", "Medium", "Injection molded parts need release strategy; absent draft data blocks tooling confidence."),
+            ("Ribs / bosses", "High" if "cover" in p or "enclosure" in p else "Medium", "Covers often need bosses, ribs and snap features that can create sink and stress concentrations."),
+            ("Tooling strategy", "Medium", "Parting line, gate and ejector strategy are not defined."),
+            ("Tolerance capability", "Unknown" if any("ctq" in m.lower() for m in missing) else "Medium", "CTQ dimensions and process capability are not yet established."),
+            ("Assembly", "Unknown", "Mating parts and assembly method are not defined."),
+        ]
+    elif workspace == "Simulation / FEA":
+        rows = [
+            ("Boundary conditions", "High" if "constraints" in " ".join(missing).lower() else "Medium", "FEA result validity depends strongly on realistic constraints."),
+            ("Loads", "High" if "load" in " ".join(missing).lower() else "Medium", "Load magnitude, direction and application area must be explicit."),
+            ("Material model", "High" if "material" in " ".join(missing).lower() else "Medium", "Material properties and failure criterion affect stress interpretation."),
+            ("Mesh convergence", "High", "A single mesh result is not enough for release decisions."),
+            ("Validation", "High", "Hand calculation or test evidence is required for confidence."),
+        ]
+    elif workspace == "CFD / Thermal":
+        rows = [
+            ("Flow regime", "High", "Reynolds number and fluid properties are needed before model choice."),
+            ("Boundary conditions", "High", "Inlet/outlet/thermal conditions determine solution meaning."),
+            ("Mesh/y+", "Medium", "Turbulence and wall treatment require mesh strategy."),
+            ("Convergence", "Medium", "Residuals must be checked with mass/energy balance."),
+            ("Validation", "High", "Analytical or test comparison is needed."),
+        ]
+    else:
+        rows = [("Input completeness", "Medium" if missing else "Low", "Review depends on the missing input list and source evidence level.")]
+    return rows
+
+
+def risk_level_to_points(level: str) -> int:
+    return {"High": 22, "Medium": 12, "Low": 4, "Unknown": 16}.get(level, 10)
+
+
+def score_from_risks(rows: List[Tuple[str, str, str]], missing: List[str]) -> int:
+    penalty = sum(risk_level_to_points(r[1]) for r in rows) + len(missing) * 3
+    return max(5, min(95, 100 - penalty))
+
+
+def calculate_reynolds_if_possible(text: str) -> Optional[str]:
+    p = text.lower()
+    if "reynolds" not in p and not ("pipe" in p and any(x in p for x in ["water", "air", "flow"])):
+        return None
+    # Try to detect diameter in mm/m and velocity in m/s.
+    d = None
+    v = None
+    m = re.search(r"(\d+(?:\.\d+)?)\s*mm", p)
+    if m:
+        d = float(m.group(1)) / 1000.0
+    m = re.search(r"(\d+(?:\.\d+)?)\s*m/s", p)
+    if m:
+        v = float(m.group(1))
+    rho, mu = 1000.0, 0.001
+    if "air" in p:
+        rho, mu = 1.225, 1.8e-5
+    if d and v:
+        re_val = rho * v * d / mu
+        if re_val < 2300:
+            regime = "laminar"
+        elif re_val < 4000:
+            regime = "transitional"
+        else:
+            regime = "turbulent"
+        return f"Deterministic check — Reynolds number: Re = ρVD/μ = {re_val:,.0f}. Estimated regime: **{regime}**. Assumed {'air' if 'air' in p else 'water'} properties near room temperature."
+    return "Reynolds check requested, but diameter and velocity were not both detected. Provide fluid, diameter, velocity and temperature."
+
+
+def generate_vba_macro(request: str) -> str:
+    return textwrap.dedent(f'''
+        ' MechAI Pro generated SolidWorks VBA skeleton
+        ' Request: {request.replace(chr(10), ' ')[:180]}
+        ' Safety: run on copied files first. Review output paths before execution.
+        Option Explicit
+
+        Sub main()
+            On Error GoTo EH
+            Dim swApp As SldWorks.SldWorks
+            Dim swModel As SldWorks.ModelDoc2
+            Set swApp = Application.SldWorks
+            Set swModel = swApp.ActiveDoc
+            If swModel Is Nothing Then
+                MsgBox "No active SolidWorks document.", vbExclamation
+                Exit Sub
+            End If
+
+            Dim modelPath As String
+            modelPath = swModel.GetPathName
+            If modelPath = "" Then
+                MsgBox "Save the document before export.", vbExclamation
+                Exit Sub
+            End If
+
+            Dim outFolder As String
+            outFolder = Left(modelPath, InStrRev(modelPath, "\\")) & "MechAI_Exports\\"
+            If Dir(outFolder, vbDirectory) = "" Then MkDir outFolder
+
+            Dim baseName As String
+            baseName = Mid(modelPath, InStrRev(modelPath, "\\") + 1)
+            baseName = Left(baseName, InStrRev(baseName, ".") - 1)
+
+            Dim errs As Long, warns As Long
+            swModel.Extension.SaveAs outFolder & baseName & ".STEP", 0, 0, Nothing, errs, warns
+            swModel.Extension.SaveAs outFolder & baseName & ".DXF", 0, 0, Nothing, errs, warns
+
+            MsgBox "Export completed: " & outFolder, vbInformation
+            Exit Sub
+        EH:
+            MsgBox "Macro failed: " & Err.Description, vbCritical
+        End Sub
+    ''').strip()
+
+
+def generate_apdl(request: str) -> str:
+    return textwrap.dedent(f'''
+        ! MechAI Pro ANSYS APDL starter
+        ! Request: {request.replace(chr(10), ' ')[:180]}
+        /PREP7
+        ! TODO: define material properties
+        ! MP,EX,1,2.1E11
+        ! MP,PRXY,1,0.3
+        ! TODO: import/create geometry and mesh
+        ! TODO: apply boundary conditions and loads
+        ! Use mesh convergence and hand-calculation validation before release.
+        /SOLU
+        ANTYPE,0
+        ! SOLVE
+        /POST1
+        ! PRNSOL,S,COMP
+    ''').strip()
+
+
+def generate_fluent_journal(request: str) -> str:
+    return textwrap.dedent(f'''
+        ; MechAI Pro Fluent journal starter
+        ; Request: {request.replace(chr(10), ' ')[:180]}
+        ; TODO: read mesh, set units, define material, boundary conditions, turbulence model.
+        /file/read-case "case.cas.h5"
+        /solve/initialize/hyb-initialization
+        ; TODO: set monitors for residuals, mass balance, pressure drop, temperature.
+        /solve/iterate 500
+        /file/write-case-data "mechai_result.cas.h5"
+    ''').strip()
+
+
+def build_engineering_answer(
+    prompt: str,
+    selected_workspace: str,
+    project: Optional[Dict[str, Any]],
+    global_sources: List[Dict[str, Any]],
+    ref_sources: List[Dict[str, Any]],
+) -> str:
+    routed = route_workspace(prompt, selected_workspace)
+    agent = WORKSPACES.get(routed, {}).get("agent", "Mechanical Engineering Board")
+    gctx = graph_context(prompt, project, routed)
+    # Re-rank global sources using graph-derived source family bias.
+    graph_bias = source_family_bias_from_graph(gctx)
+    if graph_bias and global_sources:
+        def boosted_score(src: Dict[str, Any]) -> float:
+            blob = f"{src.get('title','')} {src.get('source_path','')} {src.get('text','')[:500]}".lower()
+            boost = sum(1.2 for b in graph_bias if b.lower() in blob)
+            return float(src.get("score", 0)) + boost
+        global_sources = sorted(global_sources, key=boosted_score, reverse=True)
+
+    missing = detect_missing_inputs(prompt, project, routed)
+    maturity, maturity_label = maturity_score(missing)
+    risks = risk_matrix(prompt, routed, missing)
+    base_score = score_from_risks(risks, missing)
+    calc_notes = deterministic_checks_v36(prompt, project)
+    evidence_level, evidence_pts = evidence_score(ref_sources, global_sources, calc_notes)
+    gate = release_gate_decision(base_score, missing, risks, evidence_level)
+    board = board_review(prompt, routed, project, missing, risks, gctx)
+
+    project_lines = []
+    if project:
+        for label, key in [("Project", "name"), ("Type", "project_type"), ("Part type", "part_type"), ("Material", "material"), ("Process", "process"), ("Annual volume", "annual_volume"), ("Target use", "target_use")]:
+            val = project.get(key)
+            if val:
+                project_lines.append(f"- {label}: {val}")
+
+    out: List[str] = []
+    out.append(f"### MechAI v31–v36 Mechanical Intelligence Platform — {routed}\n")
+    out.append(f"**Primary board:** {agent}")
+    out.append(f"**Mode:** Internal Knowledge + Persistent Reference Vault")
+    out.append(f"**Knowledge graph:** v31 Mechanical Knowledge Graph active")
+    out.append(f"**Agent board:** v32 Multi-agent mechanical review active")
+    out.append(f"**Review board:** v33 Release gate + evidence evaluation active")
+    out.append(f"**Calculators:** v34 deterministic validators available")
+    out.append(f"**CAD/Simulation:** v35/v36 workflow generators available when relevant")
+    out.append(f"**Release gate:** {gate} — {RELEASE_CRITERIA.get(gate, '')}")
+    out.append(f"**Engineering score:** {base_score}/100")
+    out.append(f"**Input maturity:** {maturity}/100 — {maturity_label}")
+    out.append(f"**Evidence level:** {evidence_level} ({evidence_pts}/100)\n")
+
+    if project_lines:
+        out.append("#### Project frame")
+        out.extend(project_lines)
+        out.append("")
+
+    out.append(knowledge_graph_markdown(gctx))
+    out.append("")
+
+    if calc_notes:
+        out.append("#### Deterministic checks / validators")
+        for note in calc_notes:
+            out.append(f"- {note}")
+        out.append("")
+
+    out.append("#### Risk matrix")
+    out.append("| Area | Risk | Engineering reason |")
+    out.append("|---|---:|---|")
+    for area, level, reason in risks:
+        out.append(f"| {area} | {level} | {reason} |")
+    out.append("")
+
+    out.append("#### Multi-agent Engineering Board")
+    out.append("| Reviewer | Stance | Review focus | Note |")
+    out.append("|---|---|---|---|")
+    for r in board:
+        out.append(f"| {r['agent']} | {r['stance']} | {r['focus']} | {r['note']} |")
+    out.append("")
+
+    out.append("#### Engineering assessment")
+    if routed == "Manufacturing / DFM":
+        out.extend([
+            "1. Treat this as a **pre-tooling engineering review** until CAD, material grade, nominal wall thickness, production volume and CTQ dimensions are known.",
+            "2. Use the graph links to connect material, wall thickness, ribs/bosses, draft, shrinkage and tooling into one risk model, not isolated checklist items.",
+            "3. High-value actions: section CAD for wall uniformity, define draft/ejection, rationalize bosses/ribs, review parting line/gates and create first-article inspection criteria.",
+            "4. If volume is high, add mold-flow/tooling review and capability planning before release.",
+        ])
+    elif routed == "Simulation / FEA":
+        out.extend([
+            "1. Freeze the simulation objective before model setup: strength, stiffness, modal, buckling, fatigue or thermal behavior.",
+            "2. Review loads, supports, contacts and material law before mesh refinement; wrong boundary conditions cannot be fixed by a fine mesh.",
+            "3. Require convergence and validation evidence before using the result for design release.",
+        ])
+    elif routed == "CFD / Thermal":
+        out.extend([
+            "1. Calculate flow regime and boundary-condition completeness before choosing a turbulence or thermal model.",
+            "2. Require mass/energy balance, residual monitoring, mesh/y+ checks and validation against analytical or test data.",
+        ])
+    elif routed == "CAD / SolidWorks":
+        out.extend([
+            "1. Treat CAD automation as a controlled engineering workflow: input validation, safe output paths, overwrite policy and error handling.",
+            "2. Generate macro code only after defining document type, export formats, file naming, revision policy and test files.",
+        ])
+    elif routed == "Materials Selection":
+        out.extend([
+            "1. Select materials from functional requirements and constraints, not from a single property.",
+            "2. Screen by stiffness, strength, toughness, temperature, chemical exposure, process compatibility, cost and supply availability.",
+        ])
+    else:
+        out.extend([
+            "1. Frame the problem by function, loads, material, process, interfaces, failure modes and validation evidence.",
+            "2. Move from qualitative review to calculation-backed decisions as inputs mature.",
+        ])
+    out.append("")
+
+    if missing:
+        out.append("#### Missing inputs to close")
+        for m in missing:
+            out.append(f"- {m}")
+        out.append("")
+
+    out.append("#### Ranked next actions")
+    actions = [
+        "Complete the project profile: part function, material, process, production volume, CTQs and target environment.",
+        "Attach legal datasheets, drawings, design guides or previous reports to the Reference Vault with metadata.",
+        "Run the relevant calculator/validator once numeric inputs are available.",
+        "Generate a report package for design/manufacturing/quality review after the evidence level reaches Level 3+.",
+    ]
+    if routed == "CAD / SolidWorks":
+        actions.insert(2, "Use CAD Studio to generate and validate a .bas macro skeleton before running on copied SolidWorks files.")
+    if routed in {"Simulation / FEA", "CFD / Thermal"}:
+        actions.insert(2, "Use Simulation Studio to generate setup scoring, starter scripts and validation checklist.")
+    for i, action in enumerate(actions, 1):
+        out.append(f"{i}. {action}")
+    out.append("")
+
+    out.append("#### Internal citations")
+    if ref_sources:
+        for idx, src in enumerate(ref_sources[:6], 1):
+            title = src.get("source_title") or "Uploaded reference"
+            file = src.get("source_file") or "reference"
+            status = src.get("approval_status") or "Draft"
+            score_s = src.get("score", 0)
+            out.append(f"- [R{idx}] {title} — `{file}` · status: {status} · retrieval score: {score_s}")
+    if global_sources:
+        for idx, src in enumerate(global_sources[:7], 1):
+            out.append(f"- [K{idx}] {src.get('title')} — `knowledge_packs/{src.get('source_path')}` · retrieval score: {src.get('score')}")
+    if not ref_sources and not global_sources:
+        out.append("- No specific internal source was retrieved; add references or improve project metadata.")
+    return "\n".join(out)
+
+# -----------------------------------------------------------------------------
+# Reports and exports
+# -----------------------------------------------------------------------------
+
+def make_project_markdown(project: Optional[Dict[str, Any]], memory: List[Dict[str, Any]], refs: List[Dict[str, Any]]) -> str:
+    lines = [f"# MechAI Pro Project Report", "", f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ""]
+    if project:
+        lines.append("## Project Profile")
+        for k in ["name", "project_type", "part_type", "material", "process", "manufacturing_method", "annual_volume", "target_use", "status"]:
+            if project.get(k):
+                lines.append(f"- **{k.replace('_', ' ').title()}:** {project.get(k)}")
+        lines.append("")
+    lines.append("## References")
+    if refs:
+        for r in refs:
+            lines.append(f"- {r.get('title')} ({r.get('source_type')}, {r.get('approval_status')}, rev {r.get('revision') or '-'})")
+    else:
+        lines.append("- No uploaded references.")
+    lines.append("")
+    lines.append("## Project Memory")
+    for m in memory[:80]:
+        lines.append(f"### {m.get('memory_type','memory')} — {m.get('title','')}")
+        lines.append(m.get("content", "")[:2500])
         lines.append("")
     return "\n".join(lines)
 
 
-def markdown_to_docx_bytes(md: str) -> Optional[bytes]:
+def bytes_docx(markdown: str) -> Optional[bytes]:
     if Document is None:
         return None
     doc = Document()
-    for line in md.splitlines():
+    for line in markdown.splitlines():
         if line.startswith("# "):
-            doc.add_heading(line[2:], level=1)
+            doc.add_heading(line[2:].strip(), level=1)
         elif line.startswith("## "):
-            doc.add_heading(line[3:], level=2)
+            doc.add_heading(line[3:].strip(), level=2)
         elif line.startswith("### "):
-            doc.add_heading(line[4:], level=3)
+            doc.add_heading(line[4:].strip(), level=3)
         elif line.startswith("- "):
-            doc.add_paragraph(line[2:], style="List Bullet")
+            doc.add_paragraph(line[2:].strip(), style="List Bullet")
         else:
-            doc.add_paragraph(strip_md(line))
+            doc.add_paragraph(line)
     bio = io.BytesIO()
     doc.save(bio)
     return bio.getvalue()
 
 
-def markdown_to_pdf_bytes(md: str) -> Optional[bytes]:
+def bytes_pdf(text: str) -> Optional[bytes]:
     if canvas is None or A4 is None:
         return None
     bio = io.BytesIO()
     c = canvas.Canvas(bio, pagesize=A4)
-    width, height = A4
-    y = height - 40
+    w, h = A4
+    y = h - 40
     c.setFont("Helvetica", 9)
-    for raw in md.splitlines():
-        line = strip_md(raw)
-        for part in textwrap.wrap(line, width=95) or [""]:
+    for raw in text.splitlines():
+        for line in textwrap.wrap(raw, 95) or [""]:
             if y < 40:
-                c.showPage(); c.setFont("Helvetica", 9); y = height - 40
-            c.drawString(40, y, part[:140])
-            y -= 13
+                c.showPage()
+                c.setFont("Helvetica", 9)
+                y = h - 40
+            c.drawString(36, y, line[:130])
+            y -= 12
     c.save()
     return bio.getvalue()
 
 
-def memory_to_xlsx_bytes(workspace_id: str, project_id: str) -> Optional[bytes]:
+def bytes_xlsx(project: Optional[Dict[str, Any]], memory: List[Dict[str, Any]], refs: List[Dict[str, Any]]) -> Optional[bytes]:
     if Workbook is None:
         return None
-    meta, mem = load_project(workspace_id, project_id)
     wb = Workbook()
     ws = wb.active
-    ws.title = "Project Profile"
+    ws.title = "Project"
     ws.append(["Field", "Value"])
-    for k, v in meta.items():
-        ws.append([k, str(v)])
-    for sec in ["assumptions", "risks", "decisions", "materials", "calculations", "reports", "lessons_learned"]:
-        sheet = wb.create_sheet(sec[:31])
-        sheet.append(["Index", "Data"])
-        for i, item in enumerate(mem.get(sec, []), 1):
-            sheet.append([i, json.dumps(item, ensure_ascii=False) if isinstance(item, dict) else str(item)])
-    bio = io.BytesIO(); wb.save(bio); return bio.getvalue()
-
-
-def project_export_zip(workspace_id: str, project_id: str) -> bytes:
-    p = project_dir(workspace_id, project_id)
+    if project:
+        for k, v in project.items():
+            if isinstance(v, (str, int, float)) or v is None:
+                ws.append([k, v])
+    wr = wb.create_sheet("References")
+    wr.append(["Title", "Source Type", "Approval", "Confidentiality", "Revision", "Quality"])
+    for r in refs:
+        wr.append([r.get("title"), r.get("source_type"), r.get("approval_status"), r.get("confidentiality"), r.get("revision"), r.get("source_quality")])
+    wm = wb.create_sheet("Memory")
+    wm.append(["Type", "Title", "Content", "Created"])
+    for m in memory:
+        wm.append([m.get("memory_type"), m.get("title"), m.get("content"), m.get("created_at")])
     bio = io.BytesIO()
-    with zipfile.ZipFile(bio, "w", zipfile.ZIP_DEFLATED) as z:
-        for path in p.rglob("*"):
-            if path.is_file():
-                z.write(path, path.relative_to(p.parent))
-        md = build_report_markdown(workspace_id, project_id, "Project Export Summary")
-        z.writestr(f"{project_id}/project_summary.md", md)
+    wb.save(bio)
     return bio.getvalue()
 
-
-def run_quality_tests() -> List[Dict[str, Any]]:
-    cases = [
-        {"name": "DFM injection molded cover", "query": "Create a DFM review for an injection molded plastic cover.", "must": ["Wall thickness", "Draft", "Ribs", "Tooling"]},
-        {"name": "FEA bracket", "query": "Create an ANSYS static structural setup plan for a bracket loaded by 2 kN.", "must": ["Loads", "Constraints", "Mesh", "Validation"]},
-        {"name": "CFD pipe", "query": "Calculate Reynolds number for water in a 20 mm pipe at 1 m/s.", "must": ["Reynolds", "Flow regime"]},
-        {"name": "SolidWorks macro", "query": "Generate a SolidWorks macro skeleton to export STEP and DXF files.", "must": ["Active document", "Export", "Error"]},
-    ]
-    results = []
-    for c in cases:
-        ws = route_workspace(c["query"], "General engineering")
-        answer = build_engineering_answer(c["query"], ws, {}, "demo", None, for_test=True)
-        passed = sum(1 for m in c["must"] if m.lower() in answer.lower())
-        results.append({"Case": c["name"], "Workspace": ws, "Passed markers": f"{passed}/{len(c['must'])}", "Status": "Pass" if passed == len(c["must"]) else "Review"})
-    return results
-
 # -----------------------------------------------------------------------------
-# Answer builder
+# Sidebar / Auth / Workspace / Project
 # -----------------------------------------------------------------------------
 
-def format_source_list(results: List[Tuple[float, SourceChunk]]) -> str:
-    lines = []
-    for i, (score, s) in enumerate(results, 1):
-        lines.append(f"- [K{i}] {s.title} — `{s.path}` — source type: {s.source_type} — confidence weight: {s.quality:.2f}")
-    return "\n".join(lines) if lines else "- No internal source matched strongly. Use the global reasoning protocol and ask for more references."
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "auth_user" not in st.session_state:
+    st.session_state.auth_user = None
+if "current_workspace" not in st.session_state:
+    st.session_state.current_workspace = None
+if "current_project" not in st.session_state:
+    st.session_state.current_project = None
+if "selected_workspace_mode" not in st.session_state:
+    st.session_state.selected_workspace_mode = "General engineering"
 
 
-def verification_plan(workspace: str) -> List[str]:
-    if workspace == "Manufacturing / DFM":
-        return [
-            "Collect CAD/STEP or drawings with wall thickness, ribs, bosses, datum and CTQ dimensions.",
-            "Define material grade, shrinkage data, production volume, surface class and assembly method.",
-            "Run process-specific DFM review for tooling, sink/warpage, draft, parting line, ejection and tolerance capability.",
-            "Create first-article inspection plan and process capability targets for CTQ dimensions.",
-        ]
-    if workspace == "Simulation / FEA":
-        return [
-            "Freeze the simulation objective and pass/fail criterion before solving.",
-            "Confirm material properties, load cases, constraints, contacts and expected load path.",
-            "Run mesh convergence on quantity of interest and compare with a hand calculation.",
-            "Document limitations, singularities, reaction balance and validation evidence.",
-        ]
-    if workspace == "CFD / Thermal":
-        return [
-            "Define fluid, geometry domain, boundary conditions, flow rate/velocity and temperature assumptions.",
-            "Calculate Reynolds number and select turbulence/wall treatment strategy.",
-            "Set mesh quality, y+ target, convergence residuals, mass/energy balance checks.",
-            "Validate pressure drop/temperature/flow with analytical correlation or test data.",
-        ]
-    if workspace == "CAD / SolidWorks":
-        return [
-            "Define document types, naming convention, output folder and overwrite policy.",
-            "Validate macro against active document, error handling and save path safety.",
-            "Run on copied files first and log success/failure per document.",
-        ]
-    return [
-        "Define requirements, assumptions and pass/fail criteria.",
-        "Check internal sources and run relevant calculators.",
-        "Validate recommendation using hand calculation, prototype or test evidence.",
-    ]
+def default_project_payload() -> Dict[str, Any]:
+    return {
+        "name": "RD_Lab",
+        "project_type": "General engineering",
+        "part_type": "",
+        "material": "",
+        "process": "",
+        "manufacturing_method": "",
+        "annual_volume": "",
+        "target_use": "",
+        "status": "Active",
+        "metadata": {"created_by": "auto_onboarding", "purpose": "zero_friction_start"},
+    }
 
 
-def build_engineering_answer(query: str, workspace: str, project_meta: Dict[str, Any], workspace_id: str, project_id: Optional[str], for_test: bool = False) -> str:
-    routed = route_workspace(query, workspace)
-    sources = retrieve_sources(query, routed, project_meta, workspace_id, project_id, k=6)
-    calcs = parse_basic_numbers_for_calcs(query)
-    missing = detect_missing_inputs(routed, query, project_meta)
-    maturity, maturity_label = input_maturity(routed, query, project_meta)
-    risks = risk_matrix(routed, query, project_meta)
-    score = score_from_risks(risks)
-    high_risks = sum(1 for r in risks if r["Risk"] == "High")
-    unknowns = sum(1 for r in risks if r["Risk"] == "Unknown")
-    conf = confidence_level(maturity, len(sources), len(calcs))
-    gate = release_gate(maturity, high_risks, unknowns)
-    agent = WORKSPACES.get(routed, WORKSPACES["General engineering"])["agent"]
-    project_frame = []
-    for key in ["project_name", "project_type", "part_type", "material", "process", "manufacturing_method", "annual_volume", "target_use"]:
-        if project_meta.get(key):
-            project_frame.append(f"- {key.replace('_',' ').title()}: {project_meta.get(key)}")
-    if not project_frame:
-        project_frame = ["- No active project metadata. Create a project to improve context and confidence."]
+def ensure_default_workspace_and_project(backend: SupabaseBackend, user: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], Optional[str]]:
+    """Create/select a default workspace and project so a signed-in engineer can start chatting immediately."""
+    try:
+        workspaces = backend.list_workspaces_for_user(user)
+        workspace_ids = [w.get("id") for w in workspaces]
 
-    lines = []
-    lines.append(f"## Mechanical Engineering OS Review — {routed}")
-    lines.append("")
-    lines.append(f"**Agent:** {agent}")
-    lines.append("**Mode:** Internal Knowledge Only")
-    lines.append(f"**Build:** {APP_VERSION}")
-    lines.append(f"**Release gate:** {gate}")
-    lines.append(f"**Input maturity:** {maturity}/100 — {maturity_label}")
-    lines.append(f"**Engineering confidence:** {conf}")
-    lines.append(f"**Primary score:** {score}/100")
-    lines.append("")
-    lines.append("### Project frame")
-    lines.extend(project_frame)
-    lines.append("")
-    lines.append("### Engineering interpretation")
-    if routed == "Manufacturing / DFM":
-        lines.append("The request is treated as a manufacturing feasibility and DFM/DFA review. The current conclusion is preliminary until material, geometry, wall thickness and production volume are defined. For an injection-molded cover, the dominant risks are wall uniformity, draft/ejection, ribs/bosses, sink/warpage, tooling strategy and tolerance capability.")
-    elif routed == "Simulation / FEA":
-        lines.append("The request is treated as an FEA setup review. The result quality depends mainly on objective definition, loads, constraints, contacts, mesh convergence and validation evidence. The review should not be released from stress plots alone.")
-    elif routed == "CFD / Thermal":
-        lines.append("The request is treated as a CFD/thermal setup review. Flow regime, boundary conditions, mesh/y+, convergence and mass/energy balance determine result credibility.")
-    elif routed == "CAD / SolidWorks":
-        lines.append("The request is treated as a CAD automation workflow. Safety, path validation, document-type checking, error handling and non-destructive testing are mandatory before running macros on production files.")
-    elif routed == "Materials Selection":
-        lines.append("The request is treated as material screening. Material choice must start from function and constraints, not from a preferred material name. Manufacturing compatibility and environment must be checked before recommendation.")
+        if st.session_state.current_workspace and st.session_state.current_workspace.get("id") in workspace_ids:
+            workspace = st.session_state.current_workspace
+        elif workspaces:
+            workspace = workspaces[0]
+            st.session_state.current_workspace = workspace
+        else:
+            workspace = backend.create_workspace("Personal Engineering Workspace", "Personal", user)
+            if not workspace:
+                return None, None, "Could not create a default workspace. Check Supabase database permissions."
+            st.session_state.current_workspace = workspace
+
+        projects = backend.list_projects(workspace["id"]) if workspace else []
+        project_ids = [p.get("id") for p in projects]
+
+        if st.session_state.current_project and st.session_state.current_project.get("id") in project_ids:
+            project = st.session_state.current_project
+        elif projects:
+            project = projects[0]
+            st.session_state.current_project = project
+        else:
+            project = backend.create_project(workspace["id"], user, default_project_payload())
+            if not project:
+                return workspace, None, "Could not create a default project. Check Supabase database permissions."
+            st.session_state.current_project = project
+
+        return workspace, project, None
+    except Exception as exc:
+        return None, None, f"Auto-start failed: {exc}"
+
+
+status = backend.status()
+
+with st.sidebar:
+    st.markdown("### ⚙️ MechAI Pro")
+    st.caption("Universal Mechanical Engineering OS")
+    st.markdown(f"<span class='mech-pill'>Build {APP_VERSION}</span>", unsafe_allow_html=True)
+    st.markdown("---")
+
+    with st.expander("Storage / Auth status", expanded=False):
+        st.write(f"Supabase: **{status.message}**")
+        st.write(f"URL: {'✅' if status.url_present else '❌'}")
+        st.write(f"Anon key: {'✅' if status.anon_present else '❌'}")
+        st.write(f"Service key: {'✅' if status.service_present else '⚠️ optional but recommended'}")
+        st.write(f"Bucket: `{status.bucket}`")
+        st.caption("Do not upload confidential data unless your Supabase project and policies are configured correctly.")
+
+    if not status.configured:
+        st.error("Supabase is not configured. Add SUPABASE_URL and SUPABASE_ANON_KEY to Streamlit Secrets. This build needs Supabase for accounts, persistent references and project storage.")
     else:
-        lines.append("The request is treated through the global mechanical engineering protocol: define function, loads, constraints, material/process, failure modes, validation method and release gate.")
-    lines.append("")
-    lines.append("### Risk matrix")
-    lines.append("| Area | Risk | Reason |")
-    lines.append("|---|---:|---|")
-    for r in risks:
-        lines.append(f"| {r['Area']} | {r['Risk']} | {r['Reason']} |")
-    lines.append("")
-    lines.append("### Missing data required before confident release")
-    if missing:
-        for m in missing:
-            lines.append(f"- {m}")
-    else:
-        lines.append("- No major missing inputs detected from the current prompt, but verify all project requirements.")
-    lines.append("")
-    if calcs:
-        lines.append("### Deterministic calculator results")
-        for c in calcs:
-            lines.append(f"**{c['name']}**")
-            for k, v in c["result"].items():
-                if isinstance(v, float):
-                    lines.append(f"- {k}: {v:.5g}")
-                else:
-                    lines.append(f"- {k}: {v}")
-        lines.append("")
-    lines.append("### Ranked engineering actions")
-    actions = []
-    for r in risks:
-        if r["Risk"] in ["High", "Unknown"]:
-            actions.append(f"Resolve **{r['Area']}**: {r['Reason']}")
-    actions += verification_plan(routed)[:3]
-    for i, a in enumerate(actions[:8], 1):
-        lines.append(f"{i}. {a}")
-    lines.append("")
-    lines.append("### Verification plan")
-    for i, step in enumerate(verification_plan(routed), 1):
-        lines.append(f"{i}. {step}")
-    lines.append("")
-    lines.append("### Internal retrieval evidence")
-    lines.append(format_source_list(sources))
-    lines.append("")
-    lines.append("### Engineering warning")
-    lines.append("This is an engineering decision-support review. Final design release still requires responsible engineer approval, correct inputs, validated calculations, and applicable standards/compliance checks.")
-    answer = "\n".join(lines)
-    if not for_test and project_id:
-        add_memory_item(workspace_id, project_id, "questions", {"question": query, "workspace": routed, "created_at": now_iso()})
-        add_memory_item(workspace_id, project_id, "risks", {"workspace": routed, "score": score, "release_gate": gate, "risk_matrix": risks, "created_at": now_iso()})
-        for c in calcs:
-            add_memory_item(workspace_id, project_id, "calculations", {"name": c["name"], "result": c["result"], "created_at": now_iso()})
-        add_memory_item(workspace_id, project_id, "chat_messages", {"role": "user", "content": query, "created_at": now_iso()})
-        add_memory_item(workspace_id, project_id, "chat_messages", {"role": "assistant", "content": answer, "created_at": now_iso()})
-    return answer
-
-# -----------------------------------------------------------------------------
-# UI
-# -----------------------------------------------------------------------------
-
-def inject_css() -> None:
-    st.markdown("""
-<style>
-:root { --bg:#0f0f10; --panel:#171719; --muted:#9ca3af; --line:#2a2a2d; --text:#f4f4f5; }
-html, body, [data-testid="stAppViewContainer"] { background:#0f0f10 !important; color:#f4f4f5; }
-[data-testid="stSidebar"] { background:#171719 !important; min-width:290px !important; width:290px !important; }
-[data-testid="stSidebar"] * { color:#f4f4f5; }
-[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"] { display:none !important; }
-.block-container { max-width:980px; padding-top:1.2rem; padding-bottom:8rem; }
-.stChatMessage { background:transparent !important; }
-[data-testid="stChatInput"] { background:#0f0f10 !important; }
-textarea, input, select { background:#1f1f22 !important; color:#f4f4f5 !important; border-color:#333 !important; }
-button { border-radius:10px !important; }
-.mechai-badge { display:inline-block; padding:5px 10px; border:1px solid #2f2f33; border-radius:999px; color:#cbd5e1; background:#161619; font-size:12px; margin-right:6px; margin-bottom:6px; }
-.mechai-card { border:1px solid #2a2a2d; background:#151517; border-radius:16px; padding:16px; margin:10px 0; }
-.small-muted { color:#9ca3af; font-size:12px; }
-hr { border-color:#2a2a2d !important; }
-</style>
-""", unsafe_allow_html=True)
-
-
-def sidebar_identity() -> Tuple[str, str, str]:
-    st.sidebar.markdown("## MechAI Pro")
-    st.sidebar.caption("Universal Mechanical Engineering OS")
-    workspace_id = st.sidebar.text_input("Workspace", value=st.session_state.get("workspace_id", "personal_workspace"), help="Personal, team, or company workspace ID.")
-    user_name = st.sidebar.text_input("User", value=st.session_state.get("user_name", "Engineer"))
-    role = st.sidebar.selectbox("Role", ROLES, index=ROLES.index(st.session_state.get("role", "Owner")) if st.session_state.get("role", "Owner") in ROLES else 0)
-    st.session_state["workspace_id"] = workspace_id
-    st.session_state["user_name"] = user_name
-    st.session_state["role"] = role
-    # Local account foundation record
-    uf = users_file(workspace_id)
-    users = safe_read_json(uf, {})
-    uid = slugify(user_name, "engineer")
-    users[uid] = {"name": user_name, "role": role, "last_seen": now_iso()}
-    safe_write_json(uf, users)
-    return workspace_id, user_name, role
-
-
-def sidebar_project_system(workspace_id: str, role: str) -> Optional[str]:
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### Projects")
-    if st.sidebar.button("+ New engineering project", use_container_width=True):
-        st.session_state.show_new_project = True
-    projects = list_projects(workspace_id)
-    labels = [f"{p.get('project_name','Project')} · {p.get('project_type','')[:18]}" for p in projects]
-    if projects:
-        current_id = st.session_state.get("active_project_id")
-        idx = next((i for i, p in enumerate(projects) if p.get("project_id") == current_id), 0)
-        chosen = st.sidebar.selectbox("Active project", labels, index=idx, label_visibility="collapsed")
-        st.session_state.active_project_id = projects[labels.index(chosen)]["project_id"]
-    else:
-        st.sidebar.info("No projects yet. Create one to unlock project memory.")
-    return st.session_state.get("active_project_id")
-
-
-def new_project_form(workspace_id: str) -> None:
-    if not st.session_state.get("show_new_project"):
-        return
-    with st.expander("Create Universal Engineering Project", expanded=True):
-        with st.form("new_project_form"):
-            c1, c2 = st.columns(2)
-            with c1:
-                project_name = st.text_input("Project name", value="Injection Molded Cover")
-                project_type = st.selectbox("Project type", PROJECT_TYPES)
-                part_type = st.text_input("Part type", value="Enclosure")
-                material = st.text_input("Material", value="ABS")
-            with c2:
-                process = st.text_input("Process", value="Injection molding")
-                manufacturing_method = st.text_input("Manufacturing method", value="Injection molding")
-                annual_volume = st.text_input("Annual volume", value="50,000")
-                target_use = st.text_input("Target use", value="Consumer product")
-            notes = st.text_area("Initial context / requirements", value="Preliminary R&D/DFM project.")
-            if st.form_submit_button("Create project", use_container_width=True):
-                pid = create_project(workspace_id, {
-                    "project_name": project_name, "project_type": project_type, "part_type": part_type,
-                    "material": material, "process": process, "manufacturing_method": manufacturing_method,
-                    "annual_volume": annual_volume, "target_use": target_use, "initial_notes": notes,
-                })
-                st.session_state.active_project_id = pid
-                st.session_state.show_new_project = False
+        if st.session_state.auth_user is None:
+            st.markdown("#### Account")
+            auth_tab = st.radio("Mode", ["Sign in", "Create account"], horizontal=True, label_visibility="collapsed")
+            email = st.text_input("Email")
+            password = st.text_input("Password", type="password")
+            if auth_tab == "Sign in":
+                if st.button("Sign in", use_container_width=True, disabled=not email or not password):
+                    ok, msg, user = backend.sign_in(email, password)
+                    if ok and user:
+                        st.session_state.auth_user = {"id": user["id"], "email": user["email"]}
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+            else:
+                if st.button("Create account", use_container_width=True, disabled=not email or not password):
+                    ok, msg = backend.sign_up(email, password)
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+        else:
+            user = st.session_state.auth_user
+            if st.session_state.current_workspace is None or st.session_state.current_project is None:
+                ws0, pr0, auto_msg = ensure_default_workspace_and_project(backend, user)
+                if auto_msg:
+                    st.warning(auto_msg)
+            st.markdown(f"#### Signed in")
+            st.caption(user.get("email"))
+            if st.button("Sign out", use_container_width=True):
+                st.session_state.auth_user = None
+                st.session_state.current_workspace = None
+                st.session_state.current_project = None
+                st.session_state.messages = []
                 st.rerun()
 
+            st.markdown("---")
+            st.markdown("#### Workspace")
+            workspaces = backend.list_workspaces_for_user(user)
+            if not workspaces:
+                st.info("Create your first workspace.")
+            with st.expander("+ Create workspace", expanded=not workspaces):
+                w_name = st.text_input("Workspace name", value="Personal Engineering Workspace")
+                w_type = st.selectbox("Workspace type", ["Personal", "Team", "Company", "Public demo"])
+                if st.button("Create workspace", use_container_width=True):
+                    row = backend.create_workspace(w_name, w_type, user)
+                    if row:
+                        st.session_state.current_workspace = row
+                        st.success("Workspace created.")
+                        st.rerun()
+            workspaces = backend.list_workspaces_for_user(user)
+            if workspaces:
+                ids = [w["id"] for w in workspaces]
+                default_idx = 0
+                if st.session_state.current_workspace and st.session_state.current_workspace.get("id") in ids:
+                    default_idx = ids.index(st.session_state.current_workspace["id"])
+                choice = st.selectbox("Select workspace", workspaces, index=default_idx, format_func=lambda w: f"{w.get('name')} · {w.get('workspace_type','')}")
+                st.session_state.current_workspace = choice
+                role = backend.get_role(choice["id"], user)
+                st.caption(f"Role: {role}")
 
-def project_dashboard(workspace_id: str, project_id: Optional[str]) -> None:
-    meta, mem = load_project(workspace_id, project_id)
-    if not project_id or not meta:
-        st.markdown("### Good to see you.")
-        st.caption("Create a project to activate project memory, reference vault, reports, CAD/simulation artifacts, and engineering history.")
-        return
-    st.markdown(f"### {html.escape(meta.get('project_name','Project'))}")
-    badges = [
-        f"Type: {meta.get('project_type','-')}", f"Part: {meta.get('part_type','-')}", f"Material: {meta.get('material','-')}",
-        f"Process: {meta.get('process','-')}", f"Volume: {meta.get('annual_volume','-')}", f"Use: {meta.get('target_use','-')}",
-    ]
-    st.markdown("".join(f"<span class='mechai-badge'>{html.escape(b)}</span>" for b in badges), unsafe_allow_html=True)
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Questions", len(mem.get("questions", [])))
-    c2.metric("Risks", len(mem.get("risks", [])))
-    c3.metric("References", len(mem.get("references", [])))
-    c4.metric("Reports", len(mem.get("reports", [])))
-    with st.expander("Project memory snapshot", expanded=False):
-        st.json({k: mem.get(k, [])[-3:] for k in ["assumptions", "risks", "decisions", "materials", "calculations", "lessons_learned"]})
+                if role in {"Owner", "Admin"}:
+                    with st.expander("Members / permissions", expanded=False):
+                        mems = backend.list_members(choice["id"])
+                        for m in mems:
+                            st.caption(f"{m.get('email')} — {m.get('role')}")
+                        new_email = st.text_input("Invite/member email")
+                        new_role = st.selectbox("Role", ROLES[1:])
+                        if st.button("Add member", use_container_width=True, disabled=not new_email):
+                            ok, msg = backend.add_member(choice["id"], new_email, new_role)
+                            if ok:
+                                st.success(msg)
+                            else:
+                                st.error(msg)
+
+                st.markdown("#### Project")
+                projects = backend.list_projects(choice["id"])
+                with st.expander("+ Create engineering project", expanded=not projects):
+                    p_name = st.text_input("Project name", value="Injection Molded Cover")
+                    p_type = st.selectbox("Project type", PROJECT_TYPES)
+                    part_type = st.text_input("Part type", value="Enclosure / cover")
+                    material = st.text_input("Material", value="")
+                    process = st.text_input("Process", value="Injection molding")
+                    method = st.text_input("Manufacturing method", value="Injection molding")
+                    vol = st.text_input("Annual volume", value="")
+                    target = st.text_input("Target use", value="")
+                    if st.button("Create project", use_container_width=True, disabled=not p_name):
+                        row = backend.create_project(choice["id"], user, {
+                            "name": p_name, "project_type": p_type, "part_type": part_type,
+                            "material": material, "process": process, "manufacturing_method": method,
+                            "annual_volume": vol, "target_use": target, "status": "Active", "metadata": {},
+                        })
+                        if row:
+                            st.session_state.current_project = row
+                            st.session_state.messages = []
+                            st.success("Project created.")
+                            st.rerun()
+                projects = backend.list_projects(choice["id"])
+                if projects:
+                    pids = [p["id"] for p in projects]
+                    default_p = 0
+                    if st.session_state.current_project and st.session_state.current_project.get("id") in pids:
+                        default_p = pids.index(st.session_state.current_project["id"])
+                    proj = st.selectbox("Select project", projects, index=default_p, format_func=lambda p: f"{p.get('name')} · {p.get('project_type')}")
+                    st.session_state.current_project = proj
+
+                st.markdown("#### Engineering mode")
+                st.session_state.selected_workspace_mode = st.selectbox("Workspace", list(WORKSPACES.keys()), index=list(WORKSPACES.keys()).index(st.session_state.selected_workspace_mode))
+
+                if st.button("Clear chat", use_container_width=True):
+                    st.session_state.messages = []
+                    st.rerun()
+
+# -----------------------------------------------------------------------------
+# Main UI
+# -----------------------------------------------------------------------------
+
+st.markdown("### MechAI Pro — Universal Mechanical Engineering OS")
+st.caption("Knowledge Graph · Multi-Agent Review Board · Calculators Pro · CAD/SolidWorks · Simulation Studio · Persistent Reference Vault")
+
+user = st.session_state.auth_user
+workspace_row = st.session_state.current_workspace
+project = st.session_state.current_project
+selected_mode = st.session_state.selected_workspace_mode
+
+if not status.configured:
+    st.stop()
+if user is None:
+    st.info("Sign in or create an account from the sidebar to use persistent projects, references, permissions and team workspaces.")
+    st.stop()
+if workspace_row is None or project is None:
+    st.info("Preparing your default engineering workspace and project. If this message remains, click the button below.")
+    if st.button("Start MechAI workspace", type="primary"):
+        ws0, pr0, auto_msg = ensure_default_workspace_and_project(backend, user)
+        if auto_msg:
+            st.error(auto_msg)
+        else:
+            st.success("Workspace and project are ready.")
+            st.rerun()
+    st.stop()
+
+workspace_id = workspace_row["id"]
+project_id = project["id"]
+role = backend.get_role(workspace_id, user)
+can_upload = role in {"Owner", "Admin", "Engineer"}
+can_manage = role in {"Owner", "Admin"}
+
+# Top dashboard
+cols = st.columns([1.2, 1, 1, 1])
+with cols[0]:
+    st.markdown(f"<div class='mech-card'><b>{html.escape(project.get('name','Project'))}</b><br><span class='mech-small'>{html.escape(project.get('project_type',''))}</span></div>", unsafe_allow_html=True)
+with cols[1]:
+    refs_count = len(backend.list_references(workspace_id, project_id))
+    st.markdown(f"<div class='mech-card'><b>{refs_count}</b><br><span class='mech-small'>Reference sources</span></div>", unsafe_allow_html=True)
+with cols[2]:
+    mem_count = len(backend.list_memory(workspace_id, project_id, 300))
+    st.markdown(f"<div class='mech-card'><b>{mem_count}</b><br><span class='mech-small'>Memory records</span></div>", unsafe_allow_html=True)
+with cols[3]:
+    st.markdown(f"<div class='mech-card'><b>{role}</b><br><span class='mech-small'>Workspace role</span></div>", unsafe_allow_html=True)
+
+# Tabs
+chat_tab, graph_tab, board_tab, vault_tab, templates_tab, calculators_tab, cad_tab, sim_tab, reports_tab, admin_tab = st.tabs([
+    "Chat", "Knowledge Graph", "Review Board", "Reference Vault", "Templates", "Calculators Pro", "CAD Studio", "Simulation Studio", "Reports", "Admin / Quality",
+])
 
 
-def reference_vault_ui(workspace_id: str, project_id: Optional[str], role: str) -> None:
-    st.subheader("Reference Vault")
-    if not project_id:
-        st.info("Create/select a project first.")
-        return
-    meta, mem = load_project(workspace_id, project_id)
-    st.caption("Upload only files you have the right to use. Do not upload confidential data to a public deployment.")
-    can_edit = role in ["Owner", "Admin", "Engineer"]
-    if can_edit:
-        with st.form("reference_upload_form"):
-            uploaded = st.file_uploader("Upload reference", type=["pdf", "txt", "md", "csv"])
-            c1, c2 = st.columns(2)
-            with c1:
-                title = st.text_input("Title")
-                ws = st.selectbox("Workspace", list(WORKSPACES.keys()), index=list(WORKSPACES.keys()).index(meta.get("workspace", "General engineering")) if meta.get("workspace") in WORKSPACES else 0)
-                source_type = st.selectbox("Source type", SOURCE_TYPES)
-            with c2:
-                confidentiality = st.selectbox("Confidentiality", CONFIDENTIALITY, index=2)
-                revision = st.text_input("Revision", value="Rev A")
-                tags = st.text_input("Tags", value="")
-            legal = st.text_area("Legal / usage note", value="I have the right to use this file for this project.")
-            if st.form_submit_button("Add to Reference Vault", use_container_width=True) and uploaded:
-                rec = register_reference(workspace_id, project_id, uploaded, {
-                    "title": title or uploaded.name, "workspace": ws, "source_type": source_type,
-                    "confidentiality": confidentiality, "revision": revision, "tags": tags, "legal_note": legal,
-                })
-                st.success(f"Reference added: {rec['title']}")
-                st.rerun()
-    else:
-        st.warning("Viewer role cannot upload references.")
-    refs = mem.get("references", [])
+with graph_tab:
+    st.markdown("#### v31 Mechanical Knowledge Graph")
+    st.caption("This graph links parts, materials, manufacturing processes, failure modes, validation methods and cost/quality drivers.")
+    graph_question = st.text_input("Graph query", value=f"{project.get('part_type','cover')} {project.get('material','')} {project.get('process','')}")
+    gctx = graph_context(graph_question, project, selected_mode)
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("Detected graph nodes", len(gctx.get("entities", [])))
+    with c2:
+        st.metric("Linked concepts", len(gctx.get("linked_concepts", [])))
+    with c3:
+        st.metric("Failure modes", len(gctx.get("failure_modes", [])))
+    st.markdown(knowledge_graph_markdown(gctx))
+    st.markdown("#### Graph node library")
+    for node, data in GRAPH_LIBRARY.items():
+        with st.expander(f"{node} · {data.get('category','concept')}"):
+            st.write("Aliases:", ", ".join(data.get("aliases", [])))
+            st.write("Linked concepts:", ", ".join(data.get("links", [])))
+            st.write("Failure/risk modes:", ", ".join(data.get("risks", [])))
+            st.write("Validation methods:", ", ".join(data.get("validation", [])))
+
+with board_tab:
+    st.markdown("#### v32–v33 Multi-Agent Engineering Review Board")
+    st.caption("The board converts the current project and question into review perspectives, risk stance and release-gate logic.")
+    board_prompt = st.text_area("Review board prompt", value="Create a DFM review for an injection molded plastic cover.", height=90)
+    routed_board = route_workspace(board_prompt, selected_mode)
+    miss_board = detect_missing_inputs(board_prompt, project, routed_board)
+    risks_board = risk_matrix(board_prompt, routed_board, miss_board)
+    gctx_board = graph_context(board_prompt, project, routed_board)
+    bscore = score_from_risks(risks_board, miss_board)
+    eval_level, eval_pts = evidence_score([], search_global_knowledge(board_prompt, routed_board, project, top_k=5), deterministic_checks_v36(board_prompt, project))
+    gate = release_gate_decision(bscore, miss_board, risks_board, eval_level)
+    st.markdown(f"**Routed workspace:** {routed_board}")
+    st.markdown(f"**Release gate:** {gate}")
+    st.markdown(f"**Engineering score:** {bscore}/100")
+    st.markdown(f"**Evidence:** {eval_level} ({eval_pts}/100)")
+    st.markdown("##### Board reviewers")
+    for row in board_review(board_prompt, routed_board, project, miss_board, risks_board, gctx_board):
+        st.markdown(f"- **{row['agent']}** — *{row['stance']}*: {row['note']}")
+    st.markdown("##### Risk matrix")
+    st.table([{"Area": a, "Risk": l, "Reason": r} for a, l, r in risks_board])
+
+
+with vault_tab:
+    st.markdown("#### Universal Reference Vault")
+    st.warning("Upload only files you have the right to use. Do not upload confidential/customer-sensitive files to a public demo workspace.")
+    if not can_upload:
+        st.info("Your role can view references but cannot upload new references.")
+    with st.form("reference_upload_form", clear_on_submit=True):
+        up = st.file_uploader("Upload reference", type=["pdf", "txt", "md", "csv"], disabled=not can_upload)
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            title = st.text_input("Title")
+            ref_workspace = st.selectbox("Workspace scope", list(WORKSPACES.keys()), index=list(WORKSPACES.keys()).index(selected_mode))
+            source_type = st.selectbox("Source type", SOURCE_TYPES)
+        with c2:
+            conf = st.selectbox("Confidentiality", CONFIDENTIALITY, index=1)
+            approval = st.selectbox("Approval status", APPROVAL_STATUS, index=0)
+            revision = st.text_input("Revision", value="A")
+        with c3:
+            tags = st.text_input("Tags", value="")
+            legal_note = st.text_area("Legal / usage note", value="I have the right to use this file for engineering reference inside this workspace.", height=90)
+            attach_to_project = st.checkbox("Attach to current project", value=True)
+        confirm = st.checkbox("I confirm this file is legal to upload and does not violate copyright, confidentiality, customer or company restrictions.")
+        submitted = st.form_submit_button("Ingest reference", disabled=not can_upload or not confirm or up is None)
+
+    if submitted and up is not None:
+        data = up.getvalue()
+        file_hash = sha256_bytes(data)
+        suffix = Path(up.name).suffix.lower()
+        if suffix not in UPLOAD_EXTENSIONS:
+            st.error("Unsupported file type.")
+        else:
+            dup = backend.find_duplicate(workspace_id, file_hash)
+            extracted = read_uploaded_text(up.name, data)
+            chunks = chunk_text(extracted)
+            quality = source_quality_score(source_type, approval, conf, legal_note)
+            ref_id = str(uuid.uuid4())
+            storage_path = f"{workspace_id}/{project_id if attach_to_project else 'workspace'}/{ref_id}_{safe_slug(up.name)}{suffix}"
+            content_type = mimetypes.guess_type(up.name)[0] or "application/octet-stream"
+            if dup:
+                st.warning(f"Duplicate detected: this file hash already exists as `{dup.get('title')}`. Metadata will reference duplicate source.")
+                storage_path = dup.get("storage_path") or storage_path
+                uploaded_ok = True
+            else:
+                uploaded_ok, upload_msg = backend.upload_reference_file(storage_path, data, content_type)
+                if not uploaded_ok:
+                    st.error(upload_msg)
+                    st.stop()
+            ref_row = {
+                "id": ref_id,
+                "workspace_id": workspace_id,
+                "project_id": project_id if attach_to_project else None,
+                "uploaded_by": user["id"],
+                "title": title or Path(up.name).stem,
+                "workspace_scope": ref_workspace,
+                "source_type": source_type,
+                "confidentiality": conf,
+                "revision": revision,
+                "tags": [t.strip() for t in tags.split(",") if t.strip()],
+                "legal_note": legal_note,
+                "approval_status": approval,
+                "source_quality": quality,
+                "file_name": up.name,
+                "file_ext": suffix,
+                "file_size": len(data),
+                "file_hash": file_hash,
+                "storage_bucket": backend.bucket,
+                "storage_path": storage_path,
+                "duplicate_of": dup.get("id") if dup else None,
+                "extracted_chars": len(extracted),
+                "chunk_count": len(chunks),
+                "created_at": now_iso(),
+            }
+            inserted = backend.insert_reference(ref_row)
+            if inserted:
+                chunk_rows = []
+                for i, ch in enumerate(chunks):
+                    chunk_rows.append({
+                        "reference_id": ref_id,
+                        "workspace_id": workspace_id,
+                        "project_id": project_id if attach_to_project else None,
+                        "chunk_index": i,
+                        "chunk_text": ch,
+                        "token_estimate": estimate_tokens(ch),
+                        "source_quality": quality,
+                        "created_at": now_iso(),
+                    })
+                backend.insert_chunks(chunk_rows)
+                st.success(f"Reference ingested: {len(chunks)} chunks, quality score {quality}.")
+                backend.add_memory(workspace_id, project_id, user, "reference_upload", title or up.name, f"Uploaded reference `{up.name}` with {len(chunks)} chunks, approval={approval}, confidentiality={conf}.", {"reference_id": ref_id})
+
+    st.markdown("#### Search references")
+    search_ref = st.text_input("Search title/tags/source")
+    refs = backend.list_references(workspace_id, project_id, search_ref)
     if refs:
-        st.markdown("#### Project references")
-        rows = [{"Title": r.get("title"), "Workspace": r.get("workspace"), "Type": r.get("source_type"), "Confidentiality": r.get("confidentiality"), "Revision": r.get("revision"), "Tags": ", ".join(r.get("tags", []))} for r in refs]
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+        for r in refs[:40]:
+            dup_text = " · duplicate" if r.get("duplicate_of") else ""
+            st.markdown(
+                f"<div class='mech-card'><b>{html.escape(r.get('title') or '')}</b>{dup_text}<br>"
+                f"<span class='mech-small'>{html.escape(r.get('source_type') or '')} · {html.escape(r.get('approval_status') or '')} · {html.escape(r.get('confidentiality') or '')} · quality {r.get('source_quality')}</span><br>"
+                f"<span class='mech-small'>File: {html.escape(r.get('file_name') or '')} · chunks {r.get('chunk_count')} · rev {html.escape(r.get('revision') or '')}</span></div>",
+                unsafe_allow_html=True,
+            )
     else:
-        st.info("No references uploaded yet.")
+        st.caption("No references found yet.")
 
+with templates_tab:
+    st.markdown("#### Engineering Templates Library")
+    templates = {
+        "DFM Review Template": "Part/process/material/volume, wall thickness, draft, ribs/bosses, tooling, tolerances, assembly, quality plan, cost drivers.",
+        "FEA Setup Review Template": "Objective, materials, loads, constraints, contacts, element type, mesh convergence, validation and failure criteria.",
+        "CFD Setup Review Template": "Domain, fluid, flow regime, boundary conditions, turbulence, mesh/y+, convergence, mass/energy balance, validation.",
+        "Material Selection Matrix": "Functional requirements, candidates, screening criteria, risks, manufacturing compatibility, cost and availability.",
+        "Design Review Checklist": "Function, loads, interfaces, tolerances, manufacturing, validation, serviceability, safety and compliance.",
+        "FMEA Template": "Function, failure mode, effects, causes, controls, severity, occurrence, detection, RPN, actions.",
+        "DVP&R Template": "Requirement, test method, sample size, acceptance criteria, owner, status, evidence.",
+        "Cost Reduction Template": "Material, process, assembly, inspection, scrap, cycle time, standardization, supplier alternatives.",
+        "SolidWorks Macro Request Template": "Document type, input folder, export formats, naming rule, overwrite policy, error handling, output report.",
+    }
+    for name, desc in templates.items():
+        with st.expander(name):
+            st.write(desc)
+            if st.button(f"Use {name}", key=f"tmpl_{name}"):
+                st.session_state.messages.append({"role": "user", "content": f"Use the {name} for project {project.get('name')}."})
+                st.rerun()
 
-def templates_ui() -> None:
-    st.subheader("Engineering Templates Library")
-    st.caption("Use these templates to avoid starting from a blank prompt.")
-    cols = st.columns(2)
-    for i, (name, text) in enumerate(TEMPLATES.items()):
-        with cols[i % 2]:
-            with st.expander(name):
-                st.code(text, language="text")
-                if st.button(f"Use: {name}", key=f"tpl_{name}"):
-                    st.session_state.template_to_use = text
-                    st.success("Template copied into the prompt helper below.")
-    if st.session_state.get("template_to_use"):
-        st.text_area("Selected template", value=st.session_state.template_to_use, height=110)
-
-
-def report_studio_ui(workspace_id: str, project_id: Optional[str]) -> None:
-    st.subheader("Engineering Report Studio")
-    if not project_id:
-        st.info("Create/select a project first.")
-        return
-    report_type = st.selectbox("Report type", ["DFM Report", "FEA Setup Review", "CFD Setup Review", "Material Selection Report", "Design Review Report", "FMEA", "DVP&R", "Cost-down Report", "Project Summary"])
-    md = build_report_markdown(workspace_id, project_id, report_type)
-    st.download_button("Download Markdown", md.encode("utf-8"), file_name=f"{slugify(report_type)}.md", mime="text/markdown")
-    docx = markdown_to_docx_bytes(md)
-    if docx:
-        st.download_button("Download Word DOCX", docx, file_name=f"{slugify(report_type)}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-    pdf = markdown_to_pdf_bytes(md)
-    if pdf:
-        st.download_button("Download PDF", pdf, file_name=f"{slugify(report_type)}.pdf", mime="application/pdf")
-    xlsx = memory_to_xlsx_bytes(workspace_id, project_id)
-    if xlsx:
-        st.download_button("Download Excel XLSX", xlsx, file_name=f"{slugify(report_type)}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    st.download_button("Export full project package ZIP", project_export_zip(workspace_id, project_id), file_name=f"{project_id}_package.zip", mime="application/zip")
-
-
-def calculators_ui(workspace_id: str, project_id: Optional[str]) -> None:
-    st.subheader("Engineering Calculators Pro")
-    calc = st.selectbox("Calculator", ["Beam bending", "Shaft torsion", "Bearing L10 life", "Reynolds number", "Pressure drop", "Heat transfer", "Tolerance stack-up", "Sheet metal bend allowance", "Injection molding checks", "Fastener preload", "Spring design", "Material screening"])
-    result = None
-    if calc == "Beam bending":
-        c1, c2, c3, c4 = st.columns(4)
-        P = c1.number_input("P load [N]", value=100.0)
-        L = c2.number_input("L span [m]", value=1.0)
-        E = c3.number_input("E [Pa]", value=2.1e11, format="%.4e")
-        I = c4.number_input("I [m^4]", value=1e-6, format="%.4e")
-        if st.button("Calculate beam"):
-            result = calc_beam_center_load(P, L, E, I)
+with calculators_tab:
+    st.markdown("#### Engineering Calculators Pro")
+    calc = st.selectbox("Calculator", ["Reynolds number", "Beam center-load deflection", "Shaft torsion", "Bearing L10 life", "Fastener preload", "Spring compression", "Heat transfer convection", "Pressure drop quick estimate", "Sheet metal bend allowance", "Injection molding sanity checks"])
+    if calc == "Reynolds number":
+        rho = st.number_input("Density ρ kg/m³", value=1000.0)
+        v = st.number_input("Velocity V m/s", value=1.0)
+        d = st.number_input("Hydraulic diameter D m", value=0.02, format="%.5f")
+        mu = st.number_input("Dynamic viscosity μ Pa·s", value=0.001, format="%.6f")
+        re_val = rho * v * d / mu if mu else 0
+        st.metric("Reynolds number", f"{re_val:,.0f}")
+        st.write("Regime:", "Laminar" if re_val < 2300 else "Transitional" if re_val < 4000 else "Turbulent")
+    elif calc == "Beam center-load deflection":
+        P = st.number_input("Load P N", value=100.0)
+        L = st.number_input("Span L m", value=1.0)
+        E = st.number_input("Elastic modulus E Pa", value=2.1e11, format="%.4e")
+        I = st.number_input("Second moment I m⁴", value=1e-8, format="%.4e")
+        sigma = st.number_input("Max moment arm c/I not included; use bending stress separately", value=0.0)
+        delta = P * L ** 3 / (48 * E * I) if E and I else 0
+        st.metric("Deflection δ", f"{delta:.6g} m")
     elif calc == "Shaft torsion":
-        c1, c2, c3, c4 = st.columns(4)
-        T = c1.number_input("Torque [Nm]", value=50.0)
-        d = c2.number_input("Diameter [m]", value=0.02, format="%.4f")
-        L = c3.number_input("Length [m]", value=0.5)
-        G = c4.number_input("G [Pa]", value=79e9, format="%.4e")
-        if st.button("Calculate shaft"):
-            result = calc_shaft_torsion(T, d, L, G)
+        T = st.number_input("Torque T N·m", value=50.0)
+        d = st.number_input("Diameter d m", value=0.02, format="%.5f")
+        tau = 16 * T / (math.pi * d ** 3) if d else 0
+        st.metric("Max torsional shear τ", f"{tau/1e6:.2f} MPa")
     elif calc == "Bearing L10 life":
-        c1, c2, c3, c4 = st.columns(4)
-        C = c1.number_input("C rating [N]", value=10000.0)
-        P = c2.number_input("Equivalent load P [N]", value=1000.0)
-        rpm = c3.number_input("Speed [rpm]", value=1000.0)
-        pexp = c4.selectbox("Bearing type exponent", [3.0, 10/3], format_func=lambda x: "Ball p=3" if x == 3.0 else "Roller p=10/3")
-        if st.button("Calculate L10"):
-            result = calc_bearing_l10(C, P, rpm, pexp)
-    elif calc == "Reynolds number":
-        c1, c2, c3, c4 = st.columns(4)
-        rho = c1.number_input("Density rho [kg/m³]", value=1000.0)
-        V = c2.number_input("Velocity V [m/s]", value=1.0)
-        D = c3.number_input("Diameter/length D [m]", value=0.02, format="%.4f")
-        mu = c4.number_input("Dynamic viscosity mu [Pa.s]", value=0.001, format="%.6f")
-        if st.button("Calculate Reynolds"):
-            result = calc_reynolds(rho, V, D, mu)
-    elif calc == "Pressure drop":
-        c1, c2, c3 = st.columns(3)
-        f = c1.number_input("Friction factor f", value=0.02, format="%.4f")
-        L = c2.number_input("Length L [m]", value=10.0)
-        D = c3.number_input("Diameter D [m]", value=0.02, format="%.4f")
-        c4, c5, c6 = st.columns(3)
-        rho = c4.number_input("Density rho [kg/m³]", value=1000.0)
-        V = c5.number_input("Velocity V [m/s]", value=1.0)
-        k = c6.number_input("Minor loss K", value=0.0)
-        if st.button("Calculate pressure drop"):
-            result = calc_pressure_drop(f, L, D, rho, V, k)
-    elif calc == "Heat transfer":
-        c1, c2, c3 = st.columns(3)
-        h = c1.number_input("h [W/m².K]", value=50.0)
-        A = c2.number_input("Area [m²]", value=0.1)
-        dT = c3.number_input("Delta T [K]", value=20.0)
-        if st.button("Calculate heat transfer"):
-            result = calc_heat_transfer(h, A, dT)
-    elif calc == "Tolerance stack-up":
-        st.caption("Worst-case stack-up: sum of absolute tolerances.")
-        vals = st.text_input("Enter tolerances separated by comma [mm]", value="0.1,0.05,0.2")
-        if st.button("Calculate stack-up"):
-            nums = [abs(float(x.strip())) for x in vals.split(",") if x.strip()]
-            result = {"worst_case_stack_mm": sum(nums), "rss_stack_mm": math.sqrt(sum(x*x for x in nums))}
-    elif calc == "Sheet metal bend allowance":
-        c1, c2, c3, c4 = st.columns(4)
-        angle = c1.number_input("Bend angle [deg]", value=90.0)
-        radius = c2.number_input("Inside radius [mm]", value=1.0)
-        th = c3.number_input("Thickness [mm]", value=1.0)
-        kf = c4.number_input("K-factor", value=0.33)
-        if st.button("Calculate bend allowance"):
-            result = calc_sheet_metal_bend(angle, radius, th, kf)
-    elif calc == "Injection molding checks":
-        c1, c2, c3 = st.columns(3)
-        wall = c1.number_input("Wall [mm]", value=2.5)
-        rib = c2.number_input("Rib thickness [mm]", value=1.2)
-        boss = c3.number_input("Boss wall [mm]", value=2.5)
-        if st.button("Run molding checks"):
-            result = injection_molding_check(wall, rib, boss)
+        C = st.number_input("Dynamic rating C N", value=10000.0)
+        P = st.number_input("Equivalent load P N", value=2000.0)
+        n = st.number_input("Speed rpm", value=1000.0)
+        pexp = st.selectbox("Bearing exponent", [3.0, 10/3], format_func=lambda x: "3 ball" if x == 3.0 else "10/3 roller")
+        l10h = (1e6 / (60 * n)) * ((C / P) ** pexp) if P and n else 0
+        st.metric("L10 life", f"{l10h:,.0f} h")
     elif calc == "Fastener preload":
-        c1, c2 = st.columns(2)
-        proof = c1.number_input("Proof load [N]", value=10000.0)
-        frac = c2.number_input("Preload fraction", value=0.75)
-        if st.button("Calculate preload"):
-            result = calc_fastener_preload(proof, frac)
-    elif calc == "Spring design":
-        c1, c2, c3, c4 = st.columns(4)
-        G = c1.number_input("G [Pa]", value=79e9, format="%.4e")
-        d = c2.number_input("Wire d [m]", value=0.002, format="%.4f")
-        D = c3.number_input("Mean coil D [m]", value=0.02, format="%.4f")
-        n = c4.number_input("Active coils", value=8.0)
-        if st.button("Calculate spring rate"):
-            result = calc_spring_rate(G, d, D, n)
-    elif calc == "Material screening":
-        requirements = st.multiselect("Requirements", ["High stiffness", "High impact", "Chemical resistance", "Low cost", "High temperature", "Low weight", "Corrosion resistance"], default=["High impact", "Low cost"])
-        candidates = ["ABS", "PC", "PP", "PA66", "Aluminum 6061", "Mild steel", "Stainless steel 304"]
-        if st.button("Screen materials"):
-            # Simple transparent heuristic
-            scores = []
-            for m in candidates:
-                score = 50
-                if "Low cost" in requirements and m in ["ABS", "PP", "Mild steel"]: score += 15
-                if "High impact" in requirements and m in ["PC", "ABS"]: score += 15
-                if "High stiffness" in requirements and m in ["Aluminum 6061", "Mild steel", "Stainless steel 304"]: score += 15
-                if "Chemical resistance" in requirements and m in ["PP", "Stainless steel 304"]: score += 15
-                if "High temperature" in requirements and m in ["PC", "Aluminum 6061", "Mild steel", "Stainless steel 304"]: score += 10
-                if "Low weight" in requirements and m in ["ABS", "PP", "PC", "Aluminum 6061"]: score += 10
-                if "Corrosion resistance" in requirements and m in ["PP", "Stainless steel 304", "Aluminum 6061"]: score += 10
-                scores.append({"Material": m, "Suitability score": min(score, 100)})
-            result = sorted(scores, key=lambda x: x["Suitability score"], reverse=True)
-    if result is not None:
-        st.markdown("#### Result")
-        st.json(result)
-        if project_id:
-            add_memory_item(workspace_id, project_id, "calculations", {"calculator": calc, "result": result, "created_at": now_iso()})
-
-
-def cad_studio_ui(workspace_id: str, project_id: Optional[str]) -> None:
-    st.subheader("CAD / SolidWorks Automation Studio")
-    workflow = st.text_area("Workflow request", value="Export the active SolidWorks document as STEP and prepare for DXF export when applicable.")
-    if st.button("Generate VBA macro + validation", use_container_width=True):
-        meta, _ = load_project(workspace_id, project_id)
-        code = generate_solidworks_macro(workflow, meta.get("project_name", "MechAI_Project") if meta else "MechAI_Project")
-        validation = validate_macro_text(code)
-        st.code(code, language="vb")
-        st.dataframe(validation, use_container_width=True, hide_index=True)
-        st.download_button("Download .bas macro", code.encode("utf-8"), file_name="mechai_solidworks_macro.bas", mime="text/plain")
-        st.download_button("Download validation notes", json.dumps(validation, indent=2).encode("utf-8"), file_name="macro_validation.json", mime="application/json")
-        if project_id:
-            add_memory_item(workspace_id, project_id, "artifacts", {"type": "SolidWorks macro", "workflow": workflow, "created_at": now_iso()})
-
-
-def simulation_studio_ui(workspace_id: str, project_id: Optional[str]) -> None:
-    st.subheader("FEA / CFD Simulation Studio")
-    mode = st.selectbox("Simulation tool", ["FEA setup scoring", "ANSYS APDL starter", "CFD setup scoring", "Fluent journal starter", "SolidWorks Simulation setup notes", "Validation checklist"])
-    prompt = st.text_area("Simulation context", value="Bracket loaded by 2 kN. Material and constraints need to be defined.")
-    meta, _ = load_project(workspace_id, project_id)
-    if st.button("Generate simulation output", use_container_width=True):
-        if "FEA" in mode:
-            score, rows = fea_setup_score(prompt, meta)
-            st.metric("FEA setup quality", f"{score}/100")
-            st.dataframe(rows, use_container_width=True, hide_index=True)
-        if "CFD" in mode:
-            score, rows = cfd_setup_score(prompt, meta)
-            st.metric("CFD setup quality", f"{score}/100")
-            st.dataframe(rows, use_container_width=True, hide_index=True)
-        if "APDL" in mode:
-            code = generate_apdl(meta.get("project_name", "MechAI_Project") if meta else "MechAI_Project", prompt)
-            st.code(code, language="text")
-            st.download_button("Download ANSYS .mac", code.encode("utf-8"), file_name="mechai_ansys_static_starter.mac", mime="text/plain")
-        if "Fluent" in mode:
-            code = generate_fluent_journal(meta.get("project_name", "MechAI_Project") if meta else "MechAI_Project")
-            st.code(code, language="text")
-            st.download_button("Download Fluent .jou", code.encode("utf-8"), file_name="mechai_fluent_starter.jou", mime="text/plain")
-        if "SolidWorks" in mode:
-            notes = """SolidWorks Simulation setup notes:
-1. Define study type and objective.
-2. Assign verified material properties.
-3. Apply fixtures that represent the real support condition.
-4. Apply loads with correct direction, distribution and units.
-5. Define contacts carefully.
-6. Mesh with convergence on quantity of interest.
-7. Compare reactions and hand calculations before release.
-"""
-            st.text(notes)
-            st.download_button("Download setup notes", notes.encode("utf-8"), file_name="solidworks_simulation_setup_notes.txt", mime="text/plain")
-        if "Validation" in mode:
-            plan = verification_plan("Simulation / FEA") + verification_plan("CFD / Thermal")
-            st.markdown("\n".join(f"- {x}" for x in plan))
-
-
-def quality_tests_ui() -> None:
-    st.subheader("Evaluation & Quality Testing System")
-    st.caption("Regression-style checks to detect whether future versions lose important engineering behavior.")
-    if st.button("Run quality tests", use_container_width=True):
-        results = run_quality_tests()
-        st.dataframe(results, use_container_width=True, hide_index=True)
-        passed = sum(1 for r in results if r["Status"] == "Pass")
-        st.metric("Quality pass rate", f"{passed}/{len(results)}")
-
-
-def chat_ui(workspace_id: str, project_id: Optional[str]) -> None:
-    workspace = st.selectbox("Workspace", list(WORKSPACES.keys()), index=0)
-    if project_id:
-        project_dashboard(workspace_id, project_id)
+        proof = st.number_input("Proof load or allowable clamp load N", value=10000.0)
+        pct = st.number_input("Target preload fraction", value=0.75)
+        st.metric("Target preload", f"{proof * pct:,.0f} N")
+        st.caption("Use verified fastener grade, thread condition, lubrication and joint stiffness before release.")
+    elif calc == "Spring compression":
+        kspring = st.number_input("Spring rate k N/mm", value=10.0)
+        travel = st.number_input("Compression travel mm", value=5.0)
+        st.metric("Spring force", f"{kspring * travel:.2f} N")
+    elif calc == "Heat transfer convection":
+        htc = st.number_input("h W/m²K", value=25.0)
+        area = st.number_input("Area m²", value=0.1)
+        dt = st.number_input("ΔT K", value=20.0)
+        st.metric("Q = hAΔT", f"{htc * area * dt:.2f} W")
+    elif calc == "Pressure drop quick estimate":
+        f = st.number_input("Darcy friction factor f", value=0.02)
+        Lp = st.number_input("Pipe length L m", value=10.0)
+        Dp = st.number_input("Diameter D m", value=0.02, format="%.5f")
+        rho_p = st.number_input("Density ρ kg/m³", value=1000.0)
+        vel_p = st.number_input("Velocity V m/s", value=1.0)
+        dp = f * (Lp / Dp) * rho_p * vel_p ** 2 / 2 if Dp else 0
+        st.metric("Darcy-Weisbach ΔP", f"{dp:,.1f} Pa")
+    elif calc == "Sheet metal bend allowance":
+        angle = st.number_input("Bend angle degrees", value=90.0)
+        r = st.number_input("Inside radius mm", value=1.0)
+        t = st.number_input("Thickness mm", value=1.0)
+        k = st.number_input("K-factor", value=0.33)
+        ba = (math.pi / 180) * angle * (r + k * t)
+        st.metric("Bend allowance", f"{ba:.3f} mm")
     else:
-        project_dashboard(workspace_id, None)
+        wall = st.number_input("Nominal wall thickness mm", value=2.5)
+        rib = st.number_input("Rib thickness mm", value=1.2)
+        boss = st.number_input("Boss wall/equivalent thickness mm", value=2.5)
+        st.write("Rib/wall ratio:", round(rib / wall, 2) if wall else "-")
+        st.write("Boss/wall ratio:", round(boss / wall, 2) if wall else "-")
+        st.write("Risk note:", "Higher sink risk" if wall and boss / wall > 0.8 else "Preliminary ratio acceptable; validate with material/tooling.")
+
+with cad_tab:
+    st.markdown("#### CAD / SolidWorks Automation Studio")
+    macro_req = st.text_area("Macro/workflow request", value="Export active SolidWorks document to STEP and DXF into a MechAI_Exports folder.", height=100)
+    macro_code = generate_vba_macro(macro_req)
+    st.code(macro_code, language="vbnet")
+    st.download_button("Download .bas macro", data=macro_code.encode("utf-8"), file_name="mechai_solidworks_export.bas", mime="text/plain")
+    st.info("This is a safe starter skeleton. Actual SolidWorks execution requires a local Windows machine with SolidWorks installed and a future local bridge.")
+
+with sim_tab:
+    st.markdown("#### FEA / CFD Simulation Studio")
+    sim_req = st.text_area("Simulation request", value="Create an ANSYS static structural setup plan for a bracket loaded by 2 kN.", height=100)
+    c1, c2 = st.columns(2)
+    with c1:
+        apdl = generate_apdl(sim_req)
+        st.code(apdl, language="text")
+        st.download_button("Download ANSYS APDL starter .mac", data=apdl.encode("utf-8"), file_name="mechai_ansys_starter.mac")
+    with c2:
+        jou = generate_fluent_journal(sim_req)
+        st.code(jou, language="text")
+        st.download_button("Download Fluent journal starter .jou", data=jou.encode("utf-8"), file_name="mechai_fluent_starter.jou")
+
+with reports_tab:
+    st.markdown("#### Engineering Report Studio")
+    memory = backend.list_memory(workspace_id, project_id, 200)
+    refs = backend.list_references(workspace_id, project_id)
+    md_report = make_project_markdown(project, memory, refs)
+    st.download_button("Download Markdown report", md_report.encode("utf-8"), file_name=f"{safe_slug(project.get('name'))}_report.md")
+    docx_b = bytes_docx(md_report)
+    pdf_b = bytes_pdf(md_report)
+    xlsx_b = bytes_xlsx(project, memory, refs)
+    if docx_b:
+        st.download_button("Download Word DOCX", docx_b, file_name=f"{safe_slug(project.get('name'))}_report.docx")
+    if pdf_b:
+        st.download_button("Download PDF", pdf_b, file_name=f"{safe_slug(project.get('name'))}_report.pdf")
+    if xlsx_b:
+        st.download_button("Download Excel XLSX", xlsx_b, file_name=f"{safe_slug(project.get('name'))}_report.xlsx")
+    zip_bio = io.BytesIO()
+    with zipfile.ZipFile(zip_bio, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("project_report.md", md_report)
+        z.writestr("project_profile.json", json.dumps(project, indent=2, ensure_ascii=False))
+        z.writestr("references.json", json.dumps(refs, indent=2, ensure_ascii=False))
+        z.writestr("memory.json", json.dumps(memory, indent=2, ensure_ascii=False))
+    st.download_button("Download full project package ZIP", zip_bio.getvalue(), file_name=f"{safe_slug(project.get('name'))}_package.zip")
+
+with admin_tab:
+    st.markdown("#### Quality / Admin Foundation")
+    st.write("This build includes v31-v36: Knowledge Graph, Multi-Agent Review Board, Release Gates, Calculators Pro, CAD/SolidWorks Agent and Simulation Studio on top of the Supabase storage/auth/reference foundation.")
+    st.markdown("- Auth: Supabase email/password")
+    st.markdown("- Multi-tenant foundation: workspace + members + roles")
+    st.markdown("- Persistent references: Supabase Storage + Postgres metadata/chunks")
+    st.markdown("- Reference intelligence: file hash duplicate detection, quality score, approval status, revision tracking")
+    st.markdown("- Retrieval: global knowledge + project/workspace references with citations")
+    if can_manage:
+        st.success("You have admin/owner permissions for this workspace.")
+    else:
+        st.info("You have non-admin permissions for this workspace.")
+
+with chat_tab:
+    st.markdown("#### Engineering Conversation")
+    if not st.session_state.messages:
+        st.markdown(
+            "<div class='mech-card'><b>Start with a project-aware engineering question.</b><br>"
+            "<span class='mech-small'>Example: Create a DFM review for this injection molded ABS cover using the project references.</span></div>",
+            unsafe_allow_html=True,
+        )
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
-    prompt = st.chat_input("Ask MechAI about design, DFM, materials, CAD, FEA, CFD, reports...")
+
+    prompt = st.chat_input("Ask MechAI about this engineering project...")
     if prompt:
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
-            st.write(prompt)
-        meta, _ = load_project(workspace_id, project_id)
-        routed = route_workspace(prompt, workspace)
-        answer = build_engineering_answer(prompt, routed, meta, workspace_id, project_id)
+            st.markdown(prompt)
         with st.chat_message("assistant"):
-            st.markdown(answer)
-        st.session_state.messages.append({"role": "assistant", "content": answer})
-
-
-def main() -> None:
-    st.set_page_config(page_title="MechAI Pro", page_icon="⚙️", layout="wide", initial_sidebar_state="expanded")
-    inject_css()
-    seed_knowledge_library()
-    ensure_state()
-    workspace_id, user_name, role = sidebar_identity()
-    project_id = sidebar_project_system(workspace_id, role)
-    st.sidebar.markdown("---")
-    page = st.sidebar.radio("Studio", ["Chat", "Project", "Reference Vault", "Templates", "Reports", "Calculators", "CAD / SolidWorks", "Simulation", "Quality Tests", "Admin"], label_visibility="collapsed")
-    st.sidebar.markdown("---")
-    st.sidebar.caption("Internal Knowledge Only · No OpenAI/Gemini core dependency")
-    st.sidebar.caption(f"Build: {APP_VERSION}")
-    new_project_form(workspace_id)
-    if page == "Chat":
-        chat_ui(workspace_id, project_id)
-    elif page == "Project":
-        project_dashboard(workspace_id, project_id)
-        if project_id:
-            meta, mem = load_project(workspace_id, project_id)
-            with st.expander("Edit project metadata"):
-                with st.form("edit_project"):
-                    for key in ["project_name", "project_type", "part_type", "material", "process", "manufacturing_method", "annual_volume", "target_use"]:
-                        meta[key] = st.text_input(key.replace("_", " ").title(), value=str(meta.get(key, "")))
-                    if st.form_submit_button("Save metadata"):
-                        save_project(workspace_id, project_id, meta, mem); st.success("Saved.")
-            lesson = st.text_area("Add lesson learned")
-            if st.button("Save lesson") and lesson:
-                add_memory_item(workspace_id, project_id, "lessons_learned", {"text": lesson, "created_at": now_iso(), "by": st.session_state.get("user_name")})
-                st.success("Lesson saved.")
-    elif page == "Reference Vault":
-        reference_vault_ui(workspace_id, project_id, role)
-    elif page == "Templates":
-        templates_ui()
-    elif page == "Reports":
-        report_studio_ui(workspace_id, project_id)
-    elif page == "Calculators":
-        calculators_ui(workspace_id, project_id)
-    elif page == "CAD / SolidWorks":
-        cad_studio_ui(workspace_id, project_id)
-    elif page == "Simulation":
-        simulation_studio_ui(workspace_id, project_id)
-    elif page == "Quality Tests":
-        quality_tests_ui()
-    elif page == "Admin":
-        st.subheader("Admin / Multi-tenant Foundation")
-        st.info("This Streamlit build provides local workspace/user foundations. For production multi-tenant use, move identity, files and projects to a real database/storage layer.")
-        st.write("Workspace:", workspace_id)
-        st.write("User:", user_name)
-        st.write("Role:", role)
-        projects = list_projects(workspace_id)
-        st.dataframe(projects, use_container_width=True, hide_index=True)
-        if project_id:
-            st.download_button("Download active project package", project_export_zip(workspace_id, project_id), file_name=f"{project_id}_package.zip", mime="application/zip")
-
-if __name__ == "__main__":
-    main()
+            with st.spinner("Running internal retrieval, project memory and engineering reasoning..."):
+                routed = route_workspace(prompt, selected_mode)
+                global_sources = search_global_knowledge(prompt, routed, project, top_k=8)
+                ref_sources = backend.search_reference_chunks(workspace_id, project_id, prompt, project, top_k=7)
+                answer = build_engineering_answer(prompt, routed, project, global_sources, ref_sources)
+                st.markdown(answer)
+                st.session_state.messages.append({"role": "assistant", "content": answer})
+                backend.add_memory(workspace_id, project_id, user, "question", prompt[:160], prompt, {"routed_workspace": routed})
+                backend.add_memory(workspace_id, project_id, user, "answer", f"Answer: {prompt[:80]}", answer, {
+                    "routed_workspace": routed,
+                    "global_sources": [s.get("source_path") for s in global_sources[:5]],
+                    "reference_sources": [s.get("reference_id") for s in ref_sources[:5]],
+                })
